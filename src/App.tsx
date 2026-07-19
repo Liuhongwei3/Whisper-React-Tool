@@ -1,52 +1,14 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
+import { DropZone } from './components/DropZone'
+import { FileCard } from './components/FileCard'
+import { HelpDialog } from './components/HelpDialog'
+import { SettingsPanel } from './components/SettingsPanel'
+import { StatusPanel } from './components/StatusPanel'
 import type { SelectedFile, WhisperStatus } from './types'
 
 const initialStatus: WhisperStatus = {
   state: 'idle',
   message: '请选择媒体文件、Whisper 模型和处理参数。',
-}
-
-function FileCard({
-  label,
-  file,
-  onSelect,
-  onReveal,
-  accept,
-}: {
-  label: string
-  file: SelectedFile | null
-  onSelect: () => void
-  onReveal: (filePath: string) => void
-  accept: string
-}) {
-  return (
-    <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-700 dark:bg-slate-900 dark:shadow-black/30">
-      <div className="mb-3 flex items-center justify-between gap-4">
-        <h2 className="font-semibold text-slate-900 dark:text-slate-100">{label}</h2>
-        <button className="secondary-button" onClick={onSelect} type="button">
-          选择文件
-        </button>
-      </div>
-      {file ? (
-        <div className="rounded-lg bg-slate-50 px-4 py-3 text-sm dark:bg-slate-950">
-          <p className="font-medium text-slate-800 dark:text-slate-100">{file.name}</p>
-          <button
-            className="mt-1 block break-all text-left text-slate-500 underline decoration-slate-300 underline-offset-2 hover:text-indigo-600 dark:text-slate-300 dark:decoration-slate-600 dark:hover:text-indigo-300"
-            onClick={() => onReveal(file.path)}
-            title="在文件夹中显示"
-            type="button"
-          >
-            {file.path}
-          </button>
-          <p className="mt-1 text-xs font-medium uppercase tracking-wide text-indigo-600">
-            {file.extension.slice(1)} 文件
-          </p>
-        </div>
-      ) : (
-        <p className="text-sm text-slate-500 dark:text-slate-400">支持 {accept}</p>
-      )}
-    </section>
-  )
 }
 
 export default function App() {
@@ -64,9 +26,16 @@ export default function App() {
   )
   const [keepConvertedWav, setKeepConvertedWav] = useState(false)
   const [uiError, setUiError] = useState<string | null>(null)
-  const dropRef = useRef<HTMLDivElement>(null)
-  const logRef = useRef<HTMLPreElement>(null)
   const isRunning = status.state === 'running'
+
+  const openParentFolder = useCallback(async (filePath: string) => {
+    try {
+      setUiError(null)
+      await window.whisper.openParentFolder(filePath)
+    } catch (error) {
+      setUiError(error instanceof Error ? `无法打开文件夹：${error.message}` : '无法打开文件夹。')
+    }
+  }, [])
 
   useEffect(() => {
     void window.whisper
@@ -100,13 +69,7 @@ export default function App() {
       removeLogListener()
       removeStatusListener()
     }
-  }, [openFolderWhenDone])
-
-  useEffect(() => {
-    if (logRef.current) {
-      logRef.current.scrollTop = logRef.current.scrollHeight
-    }
-  }, [logs])
+  }, [openFolderWhenDone, openParentFolder])
 
   const toggleTheme = () => {
     setIsDark((current) => {
@@ -124,43 +87,20 @@ export default function App() {
     })
   }
 
-  const openParentFolder = async (filePath: string) => {
-    try {
-      setUiError(null)
-      await window.whisper.openParentFolder(filePath)
-    } catch (error) {
-      setUiError(error instanceof Error ? `无法打开文件夹：${error.message}` : '无法打开文件夹。')
+  const handleDropFile = useCallback((file: File) => {
+    const extension = file.name.slice(file.name.lastIndexOf('.')).toLowerCase()
+    if (extension !== '.wav' && extension !== '.mp4') {
+      setStatus({ state: 'error', message: '仅支持 WAV 或 MP4 文件。' })
+      return
     }
-  }
-
-  useEffect(() => {
-    const element = dropRef.current
-    if (!element) return
-    const preventDefault = (event: DragEvent) => event.preventDefault()
-    const onDrop = (event: DragEvent) => {
-      event.preventDefault()
-      const file = event.dataTransfer?.files[0]
-      if (!file) return
-      const extension = file.name.slice(file.name.lastIndexOf('.')).toLowerCase()
-      if (extension !== '.wav' && extension !== '.mp4') {
-        setStatus({ state: 'error', message: '仅支持 WAV 或 MP4 文件。' })
-        return
-      }
-      const filePath = window.whisper.getPathForFile(file)
-      if (!filePath) {
-        setStatus({ state: 'error', message: '无法读取拖拽文件的本地路径。' })
-        return
-      }
-      setInputFile({ name: file.name, path: filePath, extension })
-      if (extension !== '.mp4') setKeepConvertedWav(false)
-      setStatus({ state: 'idle', message: '媒体文件已选择，请继续选择 Whisper 模型。' })
+    const filePath = window.whisper.getPathForFile(file)
+    if (!filePath) {
+      setStatus({ state: 'error', message: '无法读取拖拽文件的本地路径。' })
+      return
     }
-    element.addEventListener('dragover', preventDefault)
-    element.addEventListener('drop', onDrop)
-    return () => {
-      element.removeEventListener('dragover', preventDefault)
-      element.removeEventListener('drop', onDrop)
-    }
+    setInputFile({ name: file.name, path: filePath, extension })
+    if (extension !== '.mp4') setKeepConvertedWav(false)
+    setStatus({ state: 'idle', message: '媒体文件已选择，请继续选择 Whisper 模型。' })
   }, [])
 
   const canStart = useMemo(
@@ -217,16 +157,10 @@ export default function App() {
     }
   }
 
-  const statusColor = {
-    idle: 'bg-slate-100 text-slate-700 dark:bg-slate-700 dark:text-slate-200',
-    running: 'bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-200',
-    success: 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-200',
-    error: 'bg-rose-100 text-rose-800 dark:bg-rose-950 dark:text-rose-200',
-    cancelled: 'bg-slate-200 text-slate-700 dark:bg-slate-700 dark:text-slate-200',
-  }[status.state]
-
   return (
-    <main className={`min-h-screen bg-slate-100 text-slate-900 transition-colors dark:bg-slate-950 dark:text-slate-100 ${isDark ? 'dark' : ''}`}>
+    <main
+      className={`min-h-screen bg-slate-100 text-slate-900 transition-colors dark:bg-slate-950 dark:text-slate-100 ${isDark ? 'dark' : ''}`}
+    >
       <div className="mx-auto max-w-5xl p-6 md:p-10">
         <header className="mb-8 flex items-start justify-between gap-4">
           <div>
@@ -248,12 +182,7 @@ export default function App() {
           </div>
         </header>
 
-        <div
-          className="mb-5 rounded-xl border-2 border-dashed border-indigo-200 bg-indigo-50 p-5 text-center text-sm text-indigo-800 dark:border-indigo-700 dark:bg-indigo-950 dark:text-indigo-200"
-          ref={dropRef}
-        >
-          将 WAV 或 MP4 文件拖放到这里，或使用下方按钮选择文件
-        </div>
+        <DropZone onDropFile={handleDropFile} />
 
         <div className="grid gap-5 md:grid-cols-2">
           <FileCard
@@ -272,180 +201,34 @@ export default function App() {
           />
         </div>
 
-        <section className="mt-5 rounded-xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-700 dark:bg-slate-900 dark:shadow-black/30">
-          <h2 className="mb-4 font-semibold">生成设置</h2>
-          <div className="grid gap-5 sm:grid-cols-3">
-            <label className="text-sm font-medium text-slate-700 dark:text-slate-300">
-              语言
-              <select
-                className="field mt-2"
-                disabled={isRunning}
-                onChange={(event) => setLanguage(event.target.value as 'zh' | 'en' | 'ja')}
-                value={language}
-              >
-                <option value="zh">中文（Chinese）</option>
-                <option value="en">英文（English）</option>
-                <option value="ja">日语（Japanese）</option>
-              </select>
-            </label>
-            <label className="text-sm font-medium text-slate-700 dark:text-slate-300">
-              线程数 <span className="font-normal text-slate-400">（最多 {maxThreads}）</span>
-              <input
-                className="field mt-2"
-                disabled={isRunning}
-                max={maxThreads}
-                min={1}
-                onChange={(event) => setThreads(Math.max(1, Math.min(maxThreads, Number(event.target.value))))}
-                type="number"
-                value={threads}
-              />
-            </label>
-            <div className="text-sm font-medium text-slate-700 dark:text-slate-300">
-              输出格式
-              <label className="mt-2 flex h-10 items-center gap-2 rounded-lg border border-slate-300 px-3 font-normal text-slate-800 dark:border-slate-600 dark:text-slate-200">
-                <input checked readOnly type="checkbox" />
-                SRT
-              </label>
-            </div>
-          </div>
-          <label className="mt-5 flex w-fit cursor-pointer items-center gap-2 text-sm text-slate-700 dark:text-slate-300">
-            <input checked={openFolderWhenDone} onChange={toggleOpenFolderWhenDone} type="checkbox" />
-            生成完成后自动打开文件所在文件夹
-          </label>
-          {inputFile?.extension === '.mp4' && (
-            <label className="mt-3 flex w-fit cursor-pointer items-start gap-2 text-sm text-slate-700 dark:text-slate-300">
-              <input
-                checked={keepConvertedWav}
-                className="mt-1"
-                disabled={isRunning}
-                onChange={(event) => setKeepConvertedWav(event.target.checked)}
-                type="checkbox"
-              />
-              <span>
-                保留 MP4 转换后的 WAV 文件
-                <span className="mt-1 block text-xs text-slate-500 dark:text-slate-400">
-                  将保存到媒体文件所在目录，文件名后缀为 <code>.whisper.wav</code>。
-                </span>
-              </span>
-            </label>
-          )}
-          <div className="mt-6 flex flex-wrap justify-end gap-3">
-            {isRunning && (
-              <button className="secondary-button" onClick={() => void window.whisper.cancelTranscription()} type="button">
-                取消任务
-              </button>
-            )}
-            <button className="primary-button" disabled={!canStart} onClick={() => void start()} type="button">
-              {isRunning ? '正在生成字幕…' : '开始生成字幕'}
-            </button>
-          </div>
-        </section>
+        <SettingsPanel
+          canStart={canStart}
+          isRunning={isRunning}
+          keepConvertedWav={keepConvertedWav}
+          language={language}
+          maxThreads={maxThreads}
+          onCancel={() => void window.whisper.cancelTranscription()}
+          onKeepConvertedWavChange={setKeepConvertedWav}
+          onLanguageChange={setLanguage}
+          onStart={() => void start()}
+          onThreadsChange={setThreads}
+          onToggleOpenFolderWhenDone={toggleOpenFolderWhenDone}
+          openFolderWhenDone={openFolderWhenDone}
+          showKeepConvertedWav={inputFile?.extension === '.mp4'}
+          threads={threads}
+        />
 
-        <section className="mt-5 rounded-xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-700 dark:bg-slate-900 dark:shadow-black/30">
-          <div className="flex items-center justify-between gap-3">
-            <h2 className="font-semibold">处理状态</h2>
-            <span className={`rounded-full px-3 py-1 text-xs font-semibold ${statusColor}`}>
-              {status.state === 'running' ? '处理中' : status.state === 'success' ? '已完成' : status.state === 'error' ? '出错' : '等待中'}
-            </span>
-          </div>
-          <p className="mt-3 text-sm text-slate-700 dark:text-slate-300">{status.message}</p>
-          {uiError && (
-            <div className="mt-3 flex items-start justify-between gap-3 rounded-lg border border-rose-200 bg-rose-50 p-3 text-sm text-rose-800 dark:border-rose-900 dark:bg-rose-950 dark:text-rose-200" role="alert">
-              <p>{uiError}</p>
-              <button
-                aria-label="关闭错误提示"
-                className="shrink-0 font-semibold underline underline-offset-2"
-                onClick={() => setUiError(null)}
-                type="button"
-              >
-                关闭
-              </button>
-            </div>
-          )}
-          {isRunning && (
-            <div className="mt-4">
-              <div className="mb-1 flex justify-between text-xs text-slate-500 dark:text-slate-400">
-                <span>{status.progress === undefined ? '正在准备或处理音频…' : '识别进度'}</span>
-                <span>{status.progress === undefined ? '处理中' : `${status.progress}%`}</span>
-              </div>
-              <div className="h-2 overflow-hidden rounded-full bg-slate-200 dark:bg-slate-700">
-                <div
-                  className={`h-full rounded-full bg-indigo-600 transition-all duration-300 ${status.progress === undefined ? 'w-1/3 animate-pulse' : ''}`}
-                  style={status.progress === undefined ? undefined : { width: `${status.progress}%` }}
-                />
-              </div>
-            </div>
-          )}
-          {status.outputPath && (
-            <button
-              className="mt-2 block w-full break-all rounded-lg bg-emerald-50 p-3 text-left text-sm text-emerald-800 underline decoration-emerald-300 underline-offset-2 hover:bg-emerald-100 dark:bg-emerald-950 dark:text-emerald-200 dark:decoration-emerald-700 dark:hover:bg-emerald-900"
-              onClick={() => void openParentFolder(status.outputPath!)}
-              type="button"
-            >
-              已生成：{status.outputPath}（点击在文件夹中显示）
-            </button>
-          )}
-          {status.convertedWavPath && (
-            <button
-              className="mt-2 block w-full break-all rounded-lg bg-sky-50 p-3 text-left text-sm text-sky-800 underline decoration-sky-300 underline-offset-2 hover:bg-sky-100 dark:bg-sky-950 dark:text-sky-200 dark:decoration-sky-700 dark:hover:bg-sky-900"
-              onClick={() => void openParentFolder(status.convertedWavPath!)}
-              type="button"
-            >
-              已保留 WAV：{status.convertedWavPath}（点击在文件夹中显示）
-            </button>
-          )}
-          <pre className="mt-4 max-h-64 overflow-auto rounded-lg bg-slate-950 p-4 text-xs leading-5 text-slate-200" ref={logRef}>
-            {logs.length ? logs.join('') : 'whisper-cli 输出将实时显示在这里。'}
-          </pre>
-        </section>
+        <StatusPanel
+          isRunning={isRunning}
+          logs={logs}
+          onClearUiError={() => setUiError(null)}
+          onOpenPath={(filePath) => void openParentFolder(filePath)}
+          status={status}
+          uiError={uiError}
+        />
       </div>
-      {isHelpOpen && (
-        <div
-          aria-modal="true"
-          className="fixed inset-0 z-10 flex items-center justify-center bg-slate-950/60 p-4"
-          onMouseDown={() => setIsHelpOpen(false)}
-          role="dialog"
-        >
-          <section
-            className="max-h-[85vh] w-full max-w-xl overflow-y-auto rounded-xl bg-white p-6 shadow-2xl dark:bg-slate-900"
-            onMouseDown={(event) => event.stopPropagation()}
-          >
-            <div className="flex items-start justify-between gap-4">
-              <div>
-                <h2 className="text-xl font-bold">使用说明与前置条件</h2>
-                <p className="mt-1 text-sm text-slate-600 dark:text-slate-400">首次使用前请确认以下环境已准备好。</p>
-              </div>
-              <button className="secondary-button" onClick={() => setIsHelpOpen(false)} type="button">
-                关闭
-              </button>
-            </div>
-            <div className="mt-5 space-y-5 text-sm leading-6 text-slate-700 dark:text-slate-300">
-              <section>
-                <h3 className="font-semibold text-slate-900 dark:text-white">需要安装</h3>
-                <ul className="mt-2 list-disc space-y-1 pl-5">
-                  <li><code>whisper-cli</code>：必须已加入系统 PATH。</li>
-                  <li><code>ffmpeg</code>：仅处理 MP4 时需要，必须已加入系统 PATH。</li>
-                  <li>Whisper 模型文件，例如 <code>ggml-large-v3-turbo.bin</code>。</li>
-                </ul>
-                <p className="mt-2">可在命令提示符中执行 <code>whisper-cli</code> 与 <code>ffmpeg -version</code> 验证安装。</p>
-              </section>
-              <section>
-                <h3 className="font-semibold text-slate-900 dark:text-white">处理流程</h3>
-                <ol className="mt-2 list-decimal space-y-1 pl-5">
-                  <li>选择 WAV 或 MP4、模型、语言和线程数。</li>
-                  <li>WAV 会直接交给 Whisper；MP4 会先由 FFmpeg 转成 16 kHz 单声道 WAV，默认处理后自动删除。</li>
-                  <li>选择“保留 MP4 转换后的 WAV 文件”后，WAV 会保存在原文件目录，后缀为 <code>.whisper.wav</code>。</li>
-                  <li>完成后会在原媒体文件所在目录生成同名 <code>.srt</code> 字幕。</li>
-                </ol>
-              </section>
-              <section>
-                <h3 className="font-semibold text-slate-900 dark:text-white">查看结果</h3>
-                <p className="mt-2">任务成功后可点击输出路径打开所在文件夹，或启用“生成完成后自动打开文件所在文件夹”。如果失败，请查看下方实时日志与错误提示。</p>
-              </section>
-            </div>
-          </section>
-        </div>
-      )}
+
+      <HelpDialog onClose={() => setIsHelpOpen(false)} open={isHelpOpen} />
     </main>
   )
 }
