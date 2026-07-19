@@ -234,12 +234,12 @@ async function runTranscription(options: WhisperRunOptions) {
 
 function createWindow() {
   mainWindow = new BrowserWindow({
-    width: 980,
-    height: 760,
+    width: 1200,
+    height: 920,
     minWidth: 760,
     minHeight: 620,
     webPreferences: {
-      preload: MAIN_WINDOW_PRELOAD_WEBPACK_ENTRY,
+      preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
       nodeIntegration: false,
     },

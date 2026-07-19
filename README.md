@@ -2,6 +2,9 @@
 
 Windows 桌面 GUI：通过已安装的 `whisper-cli` 将 WAV 或 MP4 文件转换为中文 SRT 字幕。
 
+## 页面展示
+![demo.png](./public/demo.png)
+
 ## 前置条件
 
 - Windows 10 或更高版本
