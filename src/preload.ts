@@ -4,6 +4,7 @@ import type { WhisperApi, WhisperRunOptions } from './types'
 const api: WhisperApi = {
   selectInputFile: () => ipcRenderer.invoke('whisper:select-input'),
   selectModelFile: () => ipcRenderer.invoke('whisper:select-model'),
+  getLastModelFile: () => ipcRenderer.invoke('whisper:get-last-model'),
   getPathForFile: (file) => webUtils.getPathForFile(file),
   getCpuCount: () => ipcRenderer.invoke('whisper:cpu-count'),
   startTranscription: (options: WhisperRunOptions) =>
