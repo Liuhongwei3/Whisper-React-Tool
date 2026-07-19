@@ -62,6 +62,7 @@ export default function App() {
   const [openFolderWhenDone, setOpenFolderWhenDone] = useState(
     () => localStorage.getItem('open-folder-when-done') === 'true',
   )
+  const [keepConvertedWav, setKeepConvertedWav] = useState(false)
   const [uiError, setUiError] = useState<string | null>(null)
   const dropRef = useRef<HTMLDivElement>(null)
   const logRef = useRef<HTMLPreElement>(null)
@@ -151,6 +152,7 @@ export default function App() {
         return
       }
       setInputFile({ name: file.name, path: filePath, extension })
+      if (extension !== '.mp4') setKeepConvertedWav(false)
       setStatus({ state: 'idle', message: '媒体文件已选择，请继续选择 Whisper 模型。' })
     }
     element.addEventListener('dragover', preventDefault)
@@ -171,6 +173,7 @@ export default function App() {
       const file = await window.whisper.selectInputFile()
       if (file) {
         setInputFile(file)
+        if (file.extension !== '.mp4') setKeepConvertedWav(false)
         setUiError(null)
         setStatus({ state: 'idle', message: '媒体文件已选择。' })
       }
@@ -202,6 +205,7 @@ export default function App() {
         modelPath: modelFile.path,
         language,
         threads,
+        keepConvertedWav,
       })
     } catch (error) {
       const message = error instanceof Error ? error.message : '无法启动字幕生成任务。'
@@ -308,6 +312,23 @@ export default function App() {
             <input checked={openFolderWhenDone} onChange={toggleOpenFolderWhenDone} type="checkbox" />
             生成完成后自动打开文件所在文件夹
           </label>
+          {inputFile?.extension === '.mp4' && (
+            <label className="mt-3 flex w-fit cursor-pointer items-start gap-2 text-sm text-slate-700 dark:text-slate-300">
+              <input
+                checked={keepConvertedWav}
+                className="mt-1"
+                disabled={isRunning}
+                onChange={(event) => setKeepConvertedWav(event.target.checked)}
+                type="checkbox"
+              />
+              <span>
+                保留 MP4 转换后的 WAV 文件
+                <span className="mt-1 block text-xs text-slate-500 dark:text-slate-400">
+                  将保存到媒体文件所在目录，文件名后缀为 <code>.whisper.wav</code>。
+                </span>
+              </span>
+            </label>
+          )}
           <div className="mt-6 flex flex-wrap justify-end gap-3">
             {isRunning && (
               <button className="secondary-button" onClick={() => void window.whisper.cancelTranscription()} type="button">
@@ -364,6 +385,15 @@ export default function App() {
               已生成：{status.outputPath}（点击在文件夹中显示）
             </button>
           )}
+          {status.convertedWavPath && (
+            <button
+              className="mt-2 block w-full break-all rounded-lg bg-sky-50 p-3 text-left text-sm text-sky-800 underline decoration-sky-300 underline-offset-2 hover:bg-sky-100 dark:bg-sky-950 dark:text-sky-200 dark:decoration-sky-700 dark:hover:bg-sky-900"
+              onClick={() => void openParentFolder(status.convertedWavPath!)}
+              type="button"
+            >
+              已保留 WAV：{status.convertedWavPath}（点击在文件夹中显示）
+            </button>
+          )}
           <pre className="mt-4 max-h-64 overflow-auto rounded-lg bg-slate-950 p-4 text-xs leading-5 text-slate-200" ref={logRef}>
             {logs.length ? logs.join('') : 'whisper-cli 输出将实时显示在这里。'}
           </pre>
@@ -403,7 +433,8 @@ export default function App() {
                 <h3 className="font-semibold text-slate-900 dark:text-white">处理流程</h3>
                 <ol className="mt-2 list-decimal space-y-1 pl-5">
                   <li>选择 WAV 或 MP4、模型、语言和线程数。</li>
-                  <li>WAV 会直接交给 Whisper；MP4 会先由 FFmpeg 转成临时 16 kHz 单声道 WAV。</li>
+                  <li>WAV 会直接交给 Whisper；MP4 会先由 FFmpeg 转成 16 kHz 单声道 WAV，默认处理后自动删除。</li>
+                  <li>选择“保留 MP4 转换后的 WAV 文件”后，WAV 会保存在原文件目录，后缀为 <code>.whisper.wav</code>。</li>
                   <li>完成后会在原媒体文件所在目录生成同名 <code>.srt</code> 字幕。</li>
                 </ol>
               </section>

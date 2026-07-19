@@ -117,6 +117,7 @@ async function runTranscription(options: WhisperRunOptions) {
   )
   const outputPath = `${outputBasePath}.srt`
   let temporaryWavPath: string | null = null
+  let convertedWavPath: string | undefined
   let activeExecutable = 'whisper-cli'
 
   try {
@@ -129,9 +130,14 @@ async function runTranscription(options: WhisperRunOptions) {
 
     if (path.extname(options.inputPath).toLowerCase() === '.mp4') {
       activeExecutable = 'ffmpeg'
-      const temporaryDirectory = path.join(app.getPath('temp'), 'whisper-subtitle-tool')
-      await mkdir(temporaryDirectory, { recursive: true })
-      temporaryWavPath = path.join(temporaryDirectory, `${randomUUID()}.wav`)
+      if (options.keepConvertedWav) {
+        convertedWavPath = `${outputBasePath}.whisper.wav`
+        temporaryWavPath = convertedWavPath
+      } else {
+        const temporaryDirectory = path.join(app.getPath('temp'), 'whisper-subtitle-tool')
+        await mkdir(temporaryDirectory, { recursive: true })
+        temporaryWavPath = path.join(temporaryDirectory, `${randomUUID()}.wav`)
+      }
       const ffmpegArgs = [
         '-y',
         '-i',
@@ -198,7 +204,13 @@ async function runTranscription(options: WhisperRunOptions) {
     if (!existsSync(outputPath)) {
       throw new Error(`whisper-cli 已结束，但未找到输出字幕文件：${outputPath}`)
     }
-    sendStatus({ state: 'success', message: '字幕生成完成', outputPath, progress: 100 })
+    sendStatus({
+      state: 'success',
+      message: convertedWavPath ? '字幕生成完成，已保留转换后的 WAV 文件' : '字幕生成完成',
+      outputPath,
+      convertedWavPath,
+      progress: 100,
+    })
   } catch (error) {
     if (cancellationRequested) {
       sendStatus({ state: 'cancelled', message: '字幕生成已取消' })
@@ -209,7 +221,7 @@ async function runTranscription(options: WhisperRunOptions) {
       sendStatus({ state: 'error', message })
     }
   } finally {
-    if (temporaryWavPath) {
+    if (temporaryWavPath && !convertedWavPath) {
       await rm(temporaryWavPath, { force: true }).catch((error) => {
         sendLog(`临时 WAV 清理失败：${error instanceof Error ? error.message : String(error)}\n`)
       })

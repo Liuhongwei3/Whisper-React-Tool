@@ -23,7 +23,7 @@ npm run dev
 3. 选择中文或英文，设置线程数（默认 8）。
 4. 点击「开始生成字幕」。
 
-WAV 会直接送入 Whisper。MP4 会先由 FFmpeg 转换为临时的 16 kHz 单声道 PCM WAV，完成或失败后自动删除临时文件。
+WAV 会直接送入 Whisper。MP4 会先由 FFmpeg 转换为 16 kHz 单声道 PCM WAV，默认在完成或失败后自动删除；可在界面中选择保留为媒体文件同目录下的 `.whisper.wav` 文件。
 
 程序会执行等价命令：
 
