@@ -6,7 +6,7 @@ const api: WhisperApi = {
   selectModelFile: () => ipcRenderer.invoke('whisper:select-model'),
   getLastModelFile: () => ipcRenderer.invoke('whisper:get-last-model'),
   getPathForFile: (file) => webUtils.getPathForFile(file),
-  revealInFolder: (filePath: string) => ipcRenderer.invoke('whisper:reveal-in-folder', filePath),
+  openParentFolder: (filePath: string) => ipcRenderer.invoke('whisper:open-parent-folder', filePath),
   getCpuCount: () => ipcRenderer.invoke('whisper:cpu-count'),
   startTranscription: (options: WhisperRunOptions) =>
     ipcRenderer.invoke('whisper:start', options),

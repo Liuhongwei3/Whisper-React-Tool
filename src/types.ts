@@ -7,7 +7,7 @@ export type SelectedFile = {
 export type WhisperRunOptions = {
   inputPath: string
   modelPath: string
-  language: 'zh' | 'en'
+  language: 'zh' | 'en' | 'ja'
   threads: number
 }
 
@@ -23,7 +23,7 @@ export type WhisperApi = {
   selectModelFile: () => Promise<SelectedFile | null>
   getLastModelFile: () => Promise<SelectedFile | null>
   getPathForFile: (file: File) => string
-  revealInFolder: (filePath: string) => Promise<void>
+  openParentFolder: (filePath: string) => Promise<void>
   getCpuCount: () => Promise<number>
   startTranscription: (options: WhisperRunOptions) => Promise<void>
   cancelTranscription: () => Promise<void>

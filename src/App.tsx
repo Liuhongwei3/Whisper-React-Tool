@@ -53,7 +53,7 @@ export default function App() {
   const [inputFile, setInputFile] = useState<SelectedFile | null>(null)
   const [modelFile, setModelFile] = useState<SelectedFile | null>(null)
   const [threads, setThreads] = useState(8)
-  const [language, setLanguage] = useState<'zh' | 'en'>('zh')
+  const [language, setLanguage] = useState<'zh' | 'en' | 'ja'>('zh')
   const [maxThreads, setMaxThreads] = useState(8)
   const [status, setStatus] = useState<WhisperStatus>(initialStatus)
   const [logs, setLogs] = useState<string[]>([])
@@ -61,18 +61,29 @@ export default function App() {
   const [openFolderWhenDone, setOpenFolderWhenDone] = useState(
     () => localStorage.getItem('open-folder-when-done') === 'true',
   )
+  const [uiError, setUiError] = useState<string | null>(null)
   const dropRef = useRef<HTMLDivElement>(null)
   const logRef = useRef<HTMLPreElement>(null)
   const isRunning = status.state === 'running'
 
   useEffect(() => {
-    void window.whisper.getCpuCount().then((count) => {
-      setMaxThreads(count)
-      setThreads((current) => Math.min(Math.max(1, current), count))
-    })
-    void window.whisper.getLastModelFile().then((file) => {
-      if (file) setModelFile(file)
-    })
+    void window.whisper
+      .getCpuCount()
+      .then((count) => {
+        setMaxThreads(count)
+        setThreads((current) => Math.min(Math.max(1, current), count))
+      })
+      .catch((error) => {
+        setUiError(error instanceof Error ? `无法读取 CPU 线程数：${error.message}` : '无法读取 CPU 线程数。')
+      })
+    void window.whisper
+      .getLastModelFile()
+      .then((file) => {
+        if (file) setModelFile(file)
+      })
+      .catch((error) => {
+        setUiError(error instanceof Error ? `无法恢复上次的模型：${error.message}` : '无法恢复上次的模型。')
+      })
 
     const removeLogListener = window.whisper.onLog((line) => {
       setLogs((current) => [...current, line].slice(-300))
@@ -80,7 +91,7 @@ export default function App() {
     const removeStatusListener = window.whisper.onStatus((nextStatus) => {
       setStatus(nextStatus)
       if (nextStatus.state === 'success' && nextStatus.outputPath && openFolderWhenDone) {
-        void window.whisper.revealInFolder(nextStatus.outputPath).catch(() => undefined)
+        void openParentFolder(nextStatus.outputPath)
       }
     })
     return () => {
@@ -109,6 +120,15 @@ export default function App() {
       localStorage.setItem('open-folder-when-done', String(next))
       return next
     })
+  }
+
+  const openParentFolder = async (filePath: string) => {
+    try {
+      setUiError(null)
+      await window.whisper.openParentFolder(filePath)
+    } catch (error) {
+      setUiError(error instanceof Error ? `无法打开文件夹：${error.message}` : '无法打开文件夹。')
+    }
   }
 
   useEffect(() => {
@@ -146,24 +166,35 @@ export default function App() {
   )
 
   const selectInput = async () => {
-    const file = await window.whisper.selectInputFile()
-    if (file) {
-      setInputFile(file)
-      setStatus({ state: 'idle', message: '媒体文件已选择。' })
+    try {
+      const file = await window.whisper.selectInputFile()
+      if (file) {
+        setInputFile(file)
+        setUiError(null)
+        setStatus({ state: 'idle', message: '媒体文件已选择。' })
+      }
+    } catch (error) {
+      setUiError(error instanceof Error ? `无法选择媒体文件：${error.message}` : '无法选择媒体文件。')
     }
   }
 
   const selectModel = async () => {
-    const file = await window.whisper.selectModelFile()
-    if (file) {
-      setModelFile(file)
-      setStatus({ state: 'idle', message: 'Whisper 模型已选择。' })
+    try {
+      const file = await window.whisper.selectModelFile()
+      if (file) {
+        setModelFile(file)
+        setUiError(null)
+        setStatus({ state: 'idle', message: 'Whisper 模型已选择。' })
+      }
+    } catch (error) {
+      setUiError(error instanceof Error ? `无法选择 Whisper 模型：${error.message}` : '无法选择 Whisper 模型。')
     }
   }
 
   const start = async () => {
     if (!inputFile || !modelFile) return
     setLogs([])
+    setUiError(null)
     try {
       await window.whisper.startTranscription({
         inputPath: inputFile.path,
@@ -172,9 +203,11 @@ export default function App() {
         threads,
       })
     } catch (error) {
+      const message = error instanceof Error ? error.message : '无法启动字幕生成任务。'
+      setUiError(`无法启动字幕生成任务：${message}`)
       setStatus({
         state: 'error',
-        message: error instanceof Error ? error.message : '无法启动字幕生成任务。',
+        message,
       })
     }
   }
@@ -213,14 +246,14 @@ export default function App() {
             accept="WAV、MP4"
             file={inputFile}
             label="输入媒体文件"
-            onReveal={(filePath) => void window.whisper.revealInFolder(filePath)}
+            onReveal={(filePath) => void openParentFolder(filePath)}
             onSelect={() => void selectInput()}
           />
           <FileCard
             accept=".bin"
             file={modelFile}
             label="Whisper 模型"
-            onReveal={(filePath) => void window.whisper.revealInFolder(filePath)}
+            onReveal={(filePath) => void openParentFolder(filePath)}
             onSelect={() => void selectModel()}
           />
         </div>
@@ -233,11 +266,12 @@ export default function App() {
               <select
                 className="field mt-2"
                 disabled={isRunning}
-                onChange={(event) => setLanguage(event.target.value as 'zh' | 'en')}
+                onChange={(event) => setLanguage(event.target.value as 'zh' | 'en' | 'ja')}
                 value={language}
               >
                 <option value="zh">中文（Chinese）</option>
                 <option value="en">英文（English）</option>
+                <option value="ja">日语（Japanese）</option>
               </select>
             </label>
             <label className="text-sm font-medium text-slate-700 dark:text-slate-300">
@@ -284,6 +318,19 @@ export default function App() {
             </span>
           </div>
           <p className="mt-3 text-sm text-slate-700 dark:text-slate-300">{status.message}</p>
+          {uiError && (
+            <div className="mt-3 flex items-start justify-between gap-3 rounded-lg border border-rose-200 bg-rose-50 p-3 text-sm text-rose-800 dark:border-rose-900 dark:bg-rose-950 dark:text-rose-200" role="alert">
+              <p>{uiError}</p>
+              <button
+                aria-label="关闭错误提示"
+                className="shrink-0 font-semibold underline underline-offset-2"
+                onClick={() => setUiError(null)}
+                type="button"
+              >
+                关闭
+              </button>
+            </div>
+          )}
           {isRunning && (
             <div className="mt-4">
               <div className="mb-1 flex justify-between text-xs text-slate-500 dark:text-slate-400">
@@ -301,7 +348,7 @@ export default function App() {
           {status.outputPath && (
             <button
               className="mt-2 block w-full break-all rounded-lg bg-emerald-50 p-3 text-left text-sm text-emerald-800 underline decoration-emerald-300 underline-offset-2 hover:bg-emerald-100 dark:bg-emerald-950 dark:text-emerald-200 dark:decoration-emerald-700 dark:hover:bg-emerald-900"
-              onClick={() => void window.whisper.revealInFolder(status.outputPath!)}
+              onClick={() => void openParentFolder(status.outputPath!)}
               type="button"
             >
               已生成：{status.outputPath}（点击在文件夹中显示）
