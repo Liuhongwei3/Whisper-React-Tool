@@ -7,6 +7,7 @@ export default defineConfig({
     lib: {
       entry: 'src/main.ts',
       formats: ['cjs'],
+      fileName: 'main',
     },
     rollupOptions: {
       external: ['electron'],

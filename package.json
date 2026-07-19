@@ -8,7 +8,7 @@
     "dev": "electron-forge start",
     "package": "electron-forge package",
     "make": "electron-forge make",
-    "build": "tsc --noEmit && vite build"
+    "build": "tsc --noEmit && vite build --config vite.renderer.config.ts"
   },
   "repository": {
     "type": "git",
@@ -22,7 +22,6 @@
   },
   "homepage": "https://github.com/Liuhongwei3/Whisper-React-Tool#readme",
   "dependencies": {
-    "electron": "^43.1.1",
     "react": "^19.2.7",
     "react-dom": "^19.2.7"
   },
@@ -31,8 +30,12 @@
     "@electron-forge/plugin-vite": "^7.11.2",
     "@electron-forge/shared-types": "^7.11.2",
     "@tailwindcss/vite": "^4.3.3",
+    "@types/node": "^26.1.1",
+    "@types/react": "^19.2.17",
+    "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^6.0.3",
     "concurrently": "^10.0.3",
+    "electron": "^43.1.1",
     "tailwindcss": "^4.3.3",
     "typescript": "^7.0.2",
     "vite": "^8.1.5"
