@@ -3,6 +3,7 @@ import { existsSync } from 'node:fs'
 import { cpus } from 'node:os'
 import path from 'node:path'
 import type { WhisperRunOptions } from '../types'
+import { getMediaDurationSeconds } from './media'
 import { getLastModelPath, saveLastModelPath } from './preferences'
 import { getMainWindow, isTaskRunning, setCancellationRequested, setTaskRunning } from './runtime'
 import { cancelTranscription, runTranscription } from './transcription'
@@ -43,6 +44,16 @@ export function registerIpcHandlers() {
   })
 
   ipcMain.handle('whisper:cpu-count', () => Math.max(1, cpus().length))
+
+  ipcMain.handle('whisper:media-duration', async (_event, filePath: unknown) => {
+    if (typeof filePath !== 'string' || !filePath) {
+      throw new Error('无效的文件路径')
+    }
+    if (!existsSync(filePath)) {
+      throw new Error(`文件不存在：${filePath}`)
+    }
+    return getMediaDurationSeconds(filePath)
+  })
 
   ipcMain.handle('whisper:open-parent-folder', async (_event, filePath: unknown) => {
     if (typeof filePath !== 'string' || !filePath) {

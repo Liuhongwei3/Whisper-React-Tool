@@ -4,6 +4,7 @@ import { FileCard } from './components/FileCard'
 import { HelpDialog } from './components/HelpDialog'
 import { SettingsPanel } from './components/SettingsPanel'
 import { StatusPanel } from './components/StatusPanel'
+import { TimeRangeSlider } from './components/TimeRangeSlider'
 import type { SelectedFile, WhisperStatus } from './types'
 
 const initialStatus: WhisperStatus = {
@@ -26,7 +27,38 @@ export default function App() {
   )
   const [keepConvertedWav, setKeepConvertedWav] = useState(false)
   const [uiError, setUiError] = useState<string | null>(null)
+  const [mediaDuration, setMediaDuration] = useState<number | null>(null)
+  const [rangeStart, setRangeStart] = useState(0)
+  const [rangeEnd, setRangeEnd] = useState(0)
+  const [durationError, setDurationError] = useState<string | null>(null)
   const isRunning = status.state === 'running'
+
+  const resetTimeRange = useCallback((duration: number) => {
+    const max = Math.max(1, Math.floor(duration))
+    setMediaDuration(max)
+    setRangeStart(0)
+    setRangeEnd(max)
+    setDurationError(null)
+  }, [])
+
+  const loadMediaDuration = useCallback(
+    async (filePath: string) => {
+      setMediaDuration(null)
+      setDurationError(null)
+      try {
+        const duration = await window.whisper.getMediaDuration(filePath)
+        resetTimeRange(duration)
+      } catch (error) {
+        setMediaDuration(null)
+        setRangeStart(0)
+        setRangeEnd(0)
+        setDurationError(
+          error instanceof Error ? error.message : '无法读取媒体时长，将按全部内容识别。',
+        )
+      }
+    },
+    [resetTimeRange],
+  )
 
   const openParentFolder = useCallback(async (filePath: string) => {
     try {
@@ -101,7 +133,8 @@ export default function App() {
     setInputFile({ name: file.name, path: filePath, extension })
     if (extension !== '.mp4') setKeepConvertedWav(false)
     setStatus({ state: 'idle', message: '媒体文件已选择，请继续选择 Whisper 模型。' })
-  }, [])
+    void loadMediaDuration(filePath)
+  }, [loadMediaDuration])
 
   const canStart = useMemo(
     () => Boolean(inputFile && modelFile && threads >= 1 && !isRunning),
@@ -116,6 +149,7 @@ export default function App() {
         if (file.extension !== '.mp4') setKeepConvertedWav(false)
         setUiError(null)
         setStatus({ state: 'idle', message: '媒体文件已选择。' })
+        void loadMediaDuration(file.path)
       }
     } catch (error) {
       setUiError(error instanceof Error ? `无法选择媒体文件：${error.message}` : '无法选择媒体文件。')
@@ -139,6 +173,8 @@ export default function App() {
     if (!inputFile || !modelFile) return
     setLogs([])
     setUiError(null)
+    const isPartial =
+      mediaDuration !== null && (rangeStart > 0 || rangeEnd < mediaDuration)
     try {
       await window.whisper.startTranscription({
         inputPath: inputFile.path,
@@ -146,6 +182,12 @@ export default function App() {
         language,
         threads,
         keepConvertedWav,
+        ...(isPartial
+          ? {
+              startSeconds: rangeStart,
+              ...(rangeEnd < (mediaDuration ?? rangeEnd) ? { endSeconds: rangeEnd } : {}),
+            }
+          : {}),
       })
     } catch (error) {
       const message = error instanceof Error ? error.message : '无法启动字幕生成任务。'
@@ -200,6 +242,23 @@ export default function App() {
             onSelect={() => void selectModel()}
           />
         </div>
+
+        {inputFile && mediaDuration !== null && (
+          <TimeRangeSlider
+            disabled={isRunning}
+            duration={mediaDuration}
+            end={rangeEnd}
+            onChange={(startSeconds, endSeconds) => {
+              setRangeStart(startSeconds)
+              setRangeEnd(endSeconds)
+            }}
+            onReset={() => resetTimeRange(mediaDuration)}
+            start={rangeStart}
+          />
+        )}
+        {inputFile && durationError && (
+          <p className="mt-3 text-sm text-amber-700 dark:text-amber-300">{durationError}</p>
+        )}
 
         <SettingsPanel
           canStart={canStart}

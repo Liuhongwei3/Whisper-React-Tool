@@ -34,7 +34,7 @@ export function HelpDialog({ open, onClose }: HelpDialogProps) {
                 <code>whisper-cli</code>：必须已加入系统 PATH。
               </li>
               <li>
-                <code>ffmpeg</code>：仅处理 MP4 时需要，必须已加入系统 PATH。
+                <code>ffmpeg</code>（含 <code>ffprobe</code>）：处理 MP4、读取时长、按时间范围裁剪时需要，必须已加入系统 PATH。
               </li>
               <li>
                 Whisper 模型文件，例如 <code>ggml-large-v3-turbo.bin</code>。
@@ -48,7 +48,10 @@ export function HelpDialog({ open, onClose }: HelpDialogProps) {
             <h3 className="font-semibold text-slate-900 dark:text-white">处理流程</h3>
             <ol className="mt-2 list-decimal space-y-1 pl-5">
               <li>选择 WAV 或 MP4、模型、语言和线程数。</li>
-              <li>WAV 会直接交给 Whisper；MP4 会先由 FFmpeg 转成 16 kHz 单声道 WAV，默认处理后自动删除。</li>
+              <li>
+                可在「识别时间范围」中拖拽两端滑块选择片段，默认全部；字幕时间戳会对齐原片时间轴。
+              </li>
+              <li>WAV 整段会直接交给 Whisper；MP4 或裁剪片段会先由 FFmpeg 转成 16 kHz 单声道 WAV，默认处理后自动删除。</li>
               <li>
                 选择“保留 MP4 转换后的 WAV 文件”后，WAV 会保存在原文件目录，后缀为 <code>.whisper.wav</code>。
               </li>

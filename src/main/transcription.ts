@@ -15,6 +15,7 @@ import {
   setCancellationRequested,
   setTaskRunning,
 } from './runtime'
+import { shiftSrtTimestamps } from './srt'
 
 function reportProgress(output: string) {
   const match = output.match(/progress\s*(?:=|:)\s*(\d{1,3})\s*%/i)
@@ -70,6 +71,17 @@ function executableError(executable: string, error: unknown) {
   return `无法执行 ${executable}：${details}`
 }
 
+function resolveTimeWindow(options: WhisperRunOptions) {
+  const startSeconds = Math.max(0, options.startSeconds ?? 0)
+  const durationSeconds =
+    options.endSeconds === undefined
+      ? undefined
+      : Math.max(0, Math.max(startSeconds, options.endSeconds) - startSeconds)
+  // Only trim when the UI explicitly provided a window (omitted = full media).
+  const isPartial = options.startSeconds !== undefined || options.endSeconds !== undefined
+  return { startSeconds, durationSeconds, isPartial }
+}
+
 export async function runTranscription(options: WhisperRunOptions) {
   const outputBasePath = path.join(
     path.dirname(options.inputPath),
@@ -79,6 +91,9 @@ export async function runTranscription(options: WhisperRunOptions) {
   let temporaryWavPath: string | null = null
   let convertedWavPath: string | undefined
   let activeExecutable = 'whisper-cli'
+  const { startSeconds, durationSeconds, isPartial } = resolveTimeWindow(options)
+  const extension = path.extname(options.inputPath).toLowerCase()
+  const needsFfmpeg = extension === '.mp4' || isPartial
 
   try {
     await rm(outputPath, { force: true })
@@ -88,9 +103,9 @@ export async function runTranscription(options: WhisperRunOptions) {
     }
     let transcriptionInputPath = options.inputPath
 
-    if (path.extname(options.inputPath).toLowerCase() === '.mp4') {
+    if (needsFfmpeg) {
       activeExecutable = 'ffmpeg'
-      if (options.keepConvertedWav) {
+      if (extension === '.mp4' && options.keepConvertedWav) {
         convertedWavPath = `${outputBasePath}.whisper.wav`
         temporaryWavPath = convertedWavPath
       } else {
@@ -98,20 +113,27 @@ export async function runTranscription(options: WhisperRunOptions) {
         await mkdir(temporaryDirectory, { recursive: true })
         temporaryWavPath = path.join(temporaryDirectory, `${randomUUID()}.wav`)
       }
-      const ffmpegArgs = [
-        '-y',
-        '-i',
-        options.inputPath,
-        '-vn',
-        '-ac',
-        '1',
-        '-ar',
-        '16000',
-        '-c:a',
-        'pcm_s16le',
-        temporaryWavPath,
-      ]
-      sendStatus({ state: 'running', message: '正在将 MP4 转换为兼容的 WAV 音频…' })
+      const ffmpegArgs = ['-y']
+      if (startSeconds > 0) {
+        ffmpegArgs.push('-ss', startSeconds.toFixed(3))
+      }
+      ffmpegArgs.push('-i', options.inputPath)
+      if (durationSeconds !== undefined) {
+        ffmpegArgs.push('-t', durationSeconds.toFixed(3))
+      }
+      ffmpegArgs.push('-vn', '-ac', '1', '-ar', '16000', '-c:a', 'pcm_s16le', temporaryWavPath)
+
+      const rangeLabel =
+        durationSeconds === undefined
+          ? '全部'
+          : `${startSeconds.toFixed(0)}s–${(startSeconds + durationSeconds).toFixed(0)}s`
+      sendStatus({
+        state: 'running',
+        message:
+          extension === '.mp4'
+            ? `正在将 MP4 转换为兼容的 WAV 音频（${rangeLabel}）…`
+            : `正在裁剪音频片段（${rangeLabel}）…`,
+      })
       sendLog(`> ffmpeg ${ffmpegArgs.map((arg) => JSON.stringify(arg)).join(' ')}`)
       const conversion = await runCommand('ffmpeg', ffmpegArgs, path.dirname(options.inputPath))
       if (isCancellationRequested() || conversion.signal) {
@@ -163,6 +185,10 @@ export async function runTranscription(options: WhisperRunOptions) {
     }
     if (!existsSync(outputPath)) {
       throw new Error(`whisper-cli 已结束，但未找到输出字幕文件：${outputPath}`)
+    }
+    if (startSeconds > 0) {
+      sendStatus({ state: 'running', message: '正在将字幕时间戳对齐到原片…' })
+      await shiftSrtTimestamps(outputPath, startSeconds)
     }
     sendStatus({
       state: 'success',

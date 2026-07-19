@@ -8,6 +8,7 @@ const api: WhisperApi = {
   getPathForFile: (file) => webUtils.getPathForFile(file),
   openParentFolder: (filePath: string) => ipcRenderer.invoke('whisper:open-parent-folder', filePath),
   getCpuCount: () => ipcRenderer.invoke('whisper:cpu-count'),
+  getMediaDuration: (filePath: string) => ipcRenderer.invoke('whisper:media-duration', filePath),
   startTranscription: (options: WhisperRunOptions) =>
     ipcRenderer.invoke('whisper:start', options),
   cancelTranscription: () => ipcRenderer.invoke('whisper:cancel'),

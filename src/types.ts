@@ -10,6 +10,8 @@ export type WhisperRunOptions = {
   language: 'zh' | 'en' | 'ja'
   threads: number
   keepConvertedWav: boolean
+  startSeconds?: number
+  endSeconds?: number
 }
 
 export type WhisperStatus = {
@@ -27,6 +29,7 @@ export type WhisperApi = {
   getPathForFile: (file: File) => string
   openParentFolder: (filePath: string) => Promise<void>
   getCpuCount: () => Promise<number>
+  getMediaDuration: (filePath: string) => Promise<number>
   startTranscription: (options: WhisperRunOptions) => Promise<void>
   cancelTranscription: () => Promise<void>
   notifyReady: () => void
