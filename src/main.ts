@@ -113,11 +113,16 @@ app.whenReady().then(() => {
   })
 
   ipcMain.handle('whisper:cpu-count', () => Math.max(1, cpus().length))
-  ipcMain.handle('whisper:reveal-in-folder', (_event, filePath: unknown) => {
-    if (typeof filePath !== 'string' || !existsSync(filePath)) {
-      throw new Error('要打开的文件不存在')
+  ipcMain.handle('whisper:open-parent-folder', async (_event, filePath: unknown) => {
+    if (typeof filePath !== 'string' || !filePath) {
+      throw new Error('无效的文件路径')
     }
-    shell.showItemInFolder(filePath)
+    const folderPath = path.dirname(filePath)
+    if (!existsSync(folderPath)) {
+      throw new Error(`文件夹不存在：${folderPath}`)
+    }
+    const error = await shell.openPath(folderPath)
+    if (error) throw new Error(error)
   })
 
   ipcMain.handle('whisper:start', (_event, options: WhisperRunOptions) => {
@@ -125,10 +130,11 @@ app.whenReady().then(() => {
       throw new Error('已有字幕生成任务正在运行')
     }
 
-    const outputPath = path.join(
+    const outputBasePath = path.join(
       path.dirname(options.inputPath),
-      `${path.basename(options.inputPath, path.extname(options.inputPath))}.srt`,
+      path.basename(options.inputPath, path.extname(options.inputPath)),
     )
+    const outputPath = `${outputBasePath}.srt`
     const args = [
       '-m',
       options.modelPath,
@@ -137,6 +143,8 @@ app.whenReady().then(() => {
       '-l',
       options.language,
       '--output-srt',
+      '-of',
+      outputBasePath,
       '--print-progress',
       '-t',
       String(options.threads),
