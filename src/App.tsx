@@ -58,9 +58,11 @@ export default function App() {
   const [status, setStatus] = useState<WhisperStatus>(initialStatus)
   const [logs, setLogs] = useState<string[]>([])
   const [isDark, setIsDark] = useState(() => localStorage.getItem('theme') === 'dark')
+  const [isHelpOpen, setIsHelpOpen] = useState(false)
   const [openFolderWhenDone, setOpenFolderWhenDone] = useState(
     () => localStorage.getItem('open-folder-when-done') === 'true',
   )
+  const [keepConvertedWav, setKeepConvertedWav] = useState(false)
   const [uiError, setUiError] = useState<string | null>(null)
   const dropRef = useRef<HTMLDivElement>(null)
   const logRef = useRef<HTMLPreElement>(null)
@@ -150,6 +152,7 @@ export default function App() {
         return
       }
       setInputFile({ name: file.name, path: filePath, extension })
+      if (extension !== '.mp4') setKeepConvertedWav(false)
       setStatus({ state: 'idle', message: '媒体文件已选择，请继续选择 Whisper 模型。' })
     }
     element.addEventListener('dragover', preventDefault)
@@ -170,6 +173,7 @@ export default function App() {
       const file = await window.whisper.selectInputFile()
       if (file) {
         setInputFile(file)
+        if (file.extension !== '.mp4') setKeepConvertedWav(false)
         setUiError(null)
         setStatus({ state: 'idle', message: '媒体文件已选择。' })
       }
@@ -201,6 +205,7 @@ export default function App() {
         modelPath: modelFile.path,
         language,
         threads,
+        keepConvertedWav,
       })
     } catch (error) {
       const message = error instanceof Error ? error.message : '无法启动字幕生成任务。'
@@ -229,9 +234,18 @@ export default function App() {
             <h1 className="text-3xl font-bold tracking-tight">Whisper 字幕生成器</h1>
             <p className="mt-2 text-slate-600 dark:text-slate-400">选择媒体文件和模型，生成中文 SRT 字幕。</p>
           </div>
-          <button className="secondary-button" onClick={toggleTheme} type="button">
-            {isDark ? '切换浅色' : '切换深色'}
-          </button>
+          <div className="flex shrink-0 items-center gap-3">
+            <button
+              className="text-sm font-medium text-indigo-700 underline underline-offset-4 hover:text-indigo-900 dark:text-indigo-300 dark:hover:text-indigo-100"
+              onClick={() => setIsHelpOpen(true)}
+              type="button"
+            >
+              使用说明
+            </button>
+            <button className="secondary-button" onClick={toggleTheme} type="button">
+              {isDark ? '切换浅色' : '切换深色'}
+            </button>
+          </div>
         </header>
 
         <div
@@ -298,6 +312,23 @@ export default function App() {
             <input checked={openFolderWhenDone} onChange={toggleOpenFolderWhenDone} type="checkbox" />
             生成完成后自动打开文件所在文件夹
           </label>
+          {inputFile?.extension === '.mp4' && (
+            <label className="mt-3 flex w-fit cursor-pointer items-start gap-2 text-sm text-slate-700 dark:text-slate-300">
+              <input
+                checked={keepConvertedWav}
+                className="mt-1"
+                disabled={isRunning}
+                onChange={(event) => setKeepConvertedWav(event.target.checked)}
+                type="checkbox"
+              />
+              <span>
+                保留 MP4 转换后的 WAV 文件
+                <span className="mt-1 block text-xs text-slate-500 dark:text-slate-400">
+                  将保存到媒体文件所在目录，文件名后缀为 <code>.whisper.wav</code>。
+                </span>
+              </span>
+            </label>
+          )}
           <div className="mt-6 flex flex-wrap justify-end gap-3">
             {isRunning && (
               <button className="secondary-button" onClick={() => void window.whisper.cancelTranscription()} type="button">
@@ -354,11 +385,67 @@ export default function App() {
               已生成：{status.outputPath}（点击在文件夹中显示）
             </button>
           )}
+          {status.convertedWavPath && (
+            <button
+              className="mt-2 block w-full break-all rounded-lg bg-sky-50 p-3 text-left text-sm text-sky-800 underline decoration-sky-300 underline-offset-2 hover:bg-sky-100 dark:bg-sky-950 dark:text-sky-200 dark:decoration-sky-700 dark:hover:bg-sky-900"
+              onClick={() => void openParentFolder(status.convertedWavPath!)}
+              type="button"
+            >
+              已保留 WAV：{status.convertedWavPath}（点击在文件夹中显示）
+            </button>
+          )}
           <pre className="mt-4 max-h-64 overflow-auto rounded-lg bg-slate-950 p-4 text-xs leading-5 text-slate-200" ref={logRef}>
             {logs.length ? logs.join('') : 'whisper-cli 输出将实时显示在这里。'}
           </pre>
         </section>
       </div>
+      {isHelpOpen && (
+        <div
+          aria-modal="true"
+          className="fixed inset-0 z-10 flex items-center justify-center bg-slate-950/60 p-4"
+          onMouseDown={() => setIsHelpOpen(false)}
+          role="dialog"
+        >
+          <section
+            className="max-h-[85vh] w-full max-w-xl overflow-y-auto rounded-xl bg-white p-6 shadow-2xl dark:bg-slate-900"
+            onMouseDown={(event) => event.stopPropagation()}
+          >
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <h2 className="text-xl font-bold">使用说明与前置条件</h2>
+                <p className="mt-1 text-sm text-slate-600 dark:text-slate-400">首次使用前请确认以下环境已准备好。</p>
+              </div>
+              <button className="secondary-button" onClick={() => setIsHelpOpen(false)} type="button">
+                关闭
+              </button>
+            </div>
+            <div className="mt-5 space-y-5 text-sm leading-6 text-slate-700 dark:text-slate-300">
+              <section>
+                <h3 className="font-semibold text-slate-900 dark:text-white">需要安装</h3>
+                <ul className="mt-2 list-disc space-y-1 pl-5">
+                  <li><code>whisper-cli</code>：必须已加入系统 PATH。</li>
+                  <li><code>ffmpeg</code>：仅处理 MP4 时需要，必须已加入系统 PATH。</li>
+                  <li>Whisper 模型文件，例如 <code>ggml-large-v3-turbo.bin</code>。</li>
+                </ul>
+                <p className="mt-2">可在命令提示符中执行 <code>whisper-cli</code> 与 <code>ffmpeg -version</code> 验证安装。</p>
+              </section>
+              <section>
+                <h3 className="font-semibold text-slate-900 dark:text-white">处理流程</h3>
+                <ol className="mt-2 list-decimal space-y-1 pl-5">
+                  <li>选择 WAV 或 MP4、模型、语言和线程数。</li>
+                  <li>WAV 会直接交给 Whisper；MP4 会先由 FFmpeg 转成 16 kHz 单声道 WAV，默认处理后自动删除。</li>
+                  <li>选择“保留 MP4 转换后的 WAV 文件”后，WAV 会保存在原文件目录，后缀为 <code>.whisper.wav</code>。</li>
+                  <li>完成后会在原媒体文件所在目录生成同名 <code>.srt</code> 字幕。</li>
+                </ol>
+              </section>
+              <section>
+                <h3 className="font-semibold text-slate-900 dark:text-white">查看结果</h3>
+                <p className="mt-2">任务成功后可点击输出路径打开所在文件夹，或启用“生成完成后自动打开文件所在文件夹”。如果失败，请查看下方实时日志与错误提示。</p>
+              </section>
+            </div>
+          </section>
+        </div>
+      )}
     </main>
   )
 }

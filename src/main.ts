@@ -1,14 +1,17 @@
 import { app, BrowserWindow, dialog, ipcMain, shell } from 'electron'
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process'
-import { existsSync, statSync } from 'node:fs'
-import { mkdir, readFile, writeFile } from 'node:fs/promises'
+import { existsSync } from 'node:fs'
+import { mkdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { cpus } from 'node:os'
 import path from 'node:path'
+import { randomUUID } from 'node:crypto'
 import squirrelStartup from 'electron-squirrel-startup'
 import type { WhisperRunOptions, WhisperStatus } from './types'
 
 let mainWindow: BrowserWindow | null = null
 let activeProcess: ChildProcessWithoutNullStreams | null = null
+let taskRunning = false
+let cancellationRequested = false
 
 if (squirrelStartup) {
   app.quit()
@@ -62,6 +65,171 @@ function reportProgress(output: string) {
     message: `正在识别语音：${progress}%`,
     progress,
   })
+}
+
+function runCommand(command: string, args: string[], cwd: string, reportWhisperProgress = false) {
+  return new Promise<{ code: number | null; signal: NodeJS.Signals | null }>((resolve, reject) => {
+    let process: ChildProcessWithoutNullStreams
+    try {
+      process = spawn(command, args, { windowsHide: true, cwd })
+    } catch (error) {
+      reject(error)
+      return
+    }
+
+    activeProcess = process
+    let settled = false
+    const forwardOutput = (data: Buffer) => {
+      const output = data.toString()
+      sendLog(output)
+      if (reportWhisperProgress) reportProgress(output)
+    }
+    process.stdout.on('data', forwardOutput)
+    process.stderr.on('data', forwardOutput)
+    process.on('error', (error) => {
+      if (!settled) {
+        settled = true
+        reject(error)
+      }
+    })
+    process.on('close', (code, signal) => {
+      if (!settled) {
+        settled = true
+        resolve({ code, signal })
+      }
+    })
+  })
+}
+
+function executableError(executable: string, error: unknown) {
+  const details = error instanceof Error ? error.message : String(error)
+  const code = (error as NodeJS.ErrnoException | undefined)?.code
+  if (code === 'ENOENT') {
+    return `无法执行 ${executable}。请确认它已安装并加入系统 PATH。`
+  }
+  return `无法执行 ${executable}：${details}`
+}
+
+async function runTranscription(options: WhisperRunOptions) {
+  const outputBasePath = path.join(
+    path.dirname(options.inputPath),
+    path.basename(options.inputPath, path.extname(options.inputPath)),
+  )
+  const outputPath = `${outputBasePath}.srt`
+  let temporaryWavPath: string | null = null
+  let convertedWavPath: string | undefined
+  let activeExecutable = 'whisper-cli'
+
+  try {
+    await rm(outputPath, { force: true })
+    if (cancellationRequested) {
+      sendStatus({ state: 'cancelled', message: '字幕生成已取消' })
+      return
+    }
+    let transcriptionInputPath = options.inputPath
+
+    if (path.extname(options.inputPath).toLowerCase() === '.mp4') {
+      activeExecutable = 'ffmpeg'
+      if (options.keepConvertedWav) {
+        convertedWavPath = `${outputBasePath}.whisper.wav`
+        temporaryWavPath = convertedWavPath
+      } else {
+        const temporaryDirectory = path.join(app.getPath('temp'), 'whisper-subtitle-tool')
+        await mkdir(temporaryDirectory, { recursive: true })
+        temporaryWavPath = path.join(temporaryDirectory, `${randomUUID()}.wav`)
+      }
+      const ffmpegArgs = [
+        '-y',
+        '-i',
+        options.inputPath,
+        '-vn',
+        '-ac',
+        '1',
+        '-ar',
+        '16000',
+        '-c:a',
+        'pcm_s16le',
+        temporaryWavPath,
+      ]
+      sendStatus({ state: 'running', message: '正在将 MP4 转换为兼容的 WAV 音频…' })
+      sendLog(`> ffmpeg ${ffmpegArgs.map((arg) => JSON.stringify(arg)).join(' ')}`)
+      const conversion = await runCommand('ffmpeg', ffmpegArgs, path.dirname(options.inputPath))
+      if (cancellationRequested || conversion.signal) {
+        sendStatus({ state: 'cancelled', message: '字幕生成已取消' })
+        return
+      }
+      if (conversion.code !== 0) {
+        throw new Error(`FFmpeg 转码失败（退出码：${conversion.code ?? '未知'}）`)
+      }
+      if (!existsSync(temporaryWavPath)) {
+        throw new Error('FFmpeg 未生成 WAV 文件，无法继续识别')
+      }
+      transcriptionInputPath = temporaryWavPath
+    }
+
+    if (cancellationRequested) {
+      sendStatus({ state: 'cancelled', message: '字幕生成已取消' })
+      return
+    }
+    activeExecutable = 'whisper-cli'
+    const whisperArgs = [
+      '-m',
+      options.modelPath,
+      '-f',
+      transcriptionInputPath,
+      '-l',
+      options.language,
+      '--output-srt',
+      '-of',
+      outputBasePath,
+      '--print-progress',
+      '-t',
+      String(options.threads),
+    ]
+    sendStatus({ state: 'running', message: '正在启动 whisper-cli…' })
+    sendLog(`> whisper-cli ${whisperArgs.map((arg) => JSON.stringify(arg)).join(' ')}`)
+    const transcription = await runCommand(
+      'whisper-cli',
+      whisperArgs,
+      path.dirname(options.inputPath),
+      true,
+    )
+    if (cancellationRequested || transcription.signal) {
+      sendStatus({ state: 'cancelled', message: '字幕生成已取消' })
+      return
+    }
+    if (transcription.code !== 0) {
+      throw new Error(`whisper-cli 执行失败（退出码：${transcription.code ?? '未知'}）`)
+    }
+    if (!existsSync(outputPath)) {
+      throw new Error(`whisper-cli 已结束，但未找到输出字幕文件：${outputPath}`)
+    }
+    sendStatus({
+      state: 'success',
+      message: convertedWavPath ? '字幕生成完成，已保留转换后的 WAV 文件' : '字幕生成完成',
+      outputPath,
+      convertedWavPath,
+      progress: 100,
+    })
+  } catch (error) {
+    if (cancellationRequested) {
+      sendStatus({ state: 'cancelled', message: '字幕生成已取消' })
+    } else if ((error as NodeJS.ErrnoException | undefined)?.code === 'ENOENT') {
+      sendStatus({ state: 'error', message: executableError(activeExecutable, error) })
+    } else {
+      const message = error instanceof Error ? error.message : String(error)
+      sendStatus({ state: 'error', message })
+    }
+  } finally {
+    if (temporaryWavPath && !convertedWavPath) {
+      await rm(temporaryWavPath, { force: true }).catch((error) => {
+        sendLog(`临时 WAV 清理失败：${error instanceof Error ? error.message : String(error)}\n`)
+      })
+    }
+    activeProcess = null
+    taskRunning = false
+    cancellationRequested = false
+  }
 }
 
 function createWindow() {
@@ -126,104 +294,18 @@ app.whenReady().then(() => {
   })
 
   ipcMain.handle('whisper:start', (_event, options: WhisperRunOptions) => {
-    if (activeProcess) {
+    if (taskRunning) {
       throw new Error('已有字幕生成任务正在运行')
     }
-
-    const outputBasePath = path.join(
-      path.dirname(options.inputPath),
-      path.basename(options.inputPath, path.extname(options.inputPath)),
-    )
-    const outputPath = `${outputBasePath}.srt`
-    const args = [
-      '-m',
-      options.modelPath,
-      '-f',
-      options.inputPath,
-      '-l',
-      options.language,
-      '--output-srt',
-      '-of',
-      outputBasePath,
-      '--print-progress',
-      '-t',
-      String(options.threads),
-    ]
-
-    sendStatus({ state: 'running', message: '正在启动 whisper-cli…' })
-    sendLog(`> whisper-cli ${args.map((arg) => JSON.stringify(arg)).join(' ')}`)
-
-    try {
-      activeProcess = spawn('whisper-cli', args, {
-        windowsHide: true,
-        cwd: path.dirname(options.inputPath),
-      })
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error)
-      sendStatus({ state: 'error', message: `无法启动 whisper-cli：${message}` })
-      activeProcess = null
-      return
-    }
-
-    activeProcess.stdout.on('data', (data: Buffer) => {
-      const output = data.toString()
-      sendLog(output)
-      reportProgress(output)
-    })
-    activeProcess.stderr.on('data', (data: Buffer) => {
-      const output = data.toString()
-      sendLog(output)
-      reportProgress(output)
-    })
-    activeProcess.on('error', (error) => {
-      activeProcess = null
-      sendStatus({
-        state: 'error',
-        message: `无法执行 whisper-cli。请确认它已加入系统 PATH。(${error.message})`,
-      })
-    })
-    activeProcess.on('close', (code, signal) => {
-      activeProcess = null
-      if (signal) {
-        sendStatus({ state: 'cancelled', message: '字幕生成已取消' })
-        return
-      }
-
-      let outputReady = false
-      try {
-        outputReady = existsSync(outputPath) && statSync(outputPath).size > 0
-      } catch {
-        outputReady = false
-      }
-
-      // whisper-cli 在读音频失败时仍可能以 0 退出，必须以实际输出文件为准
-      if (code === 0 && outputReady) {
-        sendStatus({
-          state: 'success',
-          message: '字幕生成完成',
-          outputPath,
-          progress: 100,
-        })
-      } else if (!outputReady) {
-        sendStatus({
-          state: 'error',
-          message:
-            code === 0
-              ? `字幕生成失败：未生成有效的 SRT 文件。请查看日志（常见于 MP4 无法解码，whisper-cli 需支持该格式/ffmpeg）。`
-              : `whisper-cli 执行失败（退出码：${code ?? '未知'}），且未生成有效的 SRT 文件。`,
-        })
-      } else {
-        sendStatus({
-          state: 'error',
-          message: `whisper-cli 执行失败（退出码：${code ?? '未知'}）`,
-        })
-      }
-    })
+    taskRunning = true
+    cancellationRequested = false
+    void runTranscription(options)
   })
 
   ipcMain.handle('whisper:cancel', () => {
-    if (activeProcess) {
-      activeProcess.kill()
+    if (taskRunning) {
+      cancellationRequested = true
+      activeProcess?.kill()
     }
   })
 

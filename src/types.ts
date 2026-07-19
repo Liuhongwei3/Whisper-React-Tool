@@ -9,12 +9,14 @@ export type WhisperRunOptions = {
   modelPath: string
   language: 'zh' | 'en' | 'ja'
   threads: number
+  keepConvertedWav: boolean
 }
 
 export type WhisperStatus = {
   state: 'idle' | 'running' | 'success' | 'error' | 'cancelled'
   message: string
   outputPath?: string
+  convertedWavPath?: string
   progress?: number
 }
 
