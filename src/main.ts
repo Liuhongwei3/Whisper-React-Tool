@@ -1,13 +1,18 @@
-import { app, BrowserWindow, dialog, ipcMain } from 'electron'
+import { app, BrowserWindow, dialog, ipcMain, shell } from 'electron'
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process'
 import { existsSync } from 'node:fs'
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { cpus } from 'node:os'
 import path from 'node:path'
+import squirrelStartup from 'electron-squirrel-startup'
 import type { WhisperRunOptions, WhisperStatus } from './types'
 
 let mainWindow: BrowserWindow | null = null
 let activeProcess: ChildProcessWithoutNullStreams | null = null
+
+if (squirrelStartup) {
+  app.quit()
+}
 
 function sendStatus(status: WhisperStatus) {
   mainWindow?.webContents.send('whisper:status', status)
@@ -108,6 +113,12 @@ app.whenReady().then(() => {
   })
 
   ipcMain.handle('whisper:cpu-count', () => Math.max(1, cpus().length))
+  ipcMain.handle('whisper:reveal-in-folder', (_event, filePath: unknown) => {
+    if (typeof filePath !== 'string' || !existsSync(filePath)) {
+      throw new Error('要打开的文件不存在')
+    }
+    shell.showItemInFolder(filePath)
+  })
 
   ipcMain.handle('whisper:start', (_event, options: WhisperRunOptions) => {
     if (activeProcess) {

@@ -1,4 +1,5 @@
 import type { ForgeConfig } from '@electron-forge/shared-types'
+import { MakerSquirrel } from '@electron-forge/maker-squirrel'
 import { VitePlugin } from '@electron-forge/plugin-vite'
 
 const config: ForgeConfig = {
@@ -6,7 +7,13 @@ const config: ForgeConfig = {
     asar: true,
   },
   rebuildConfig: {},
-  makers: [],
+  makers: [
+    new MakerSquirrel({
+      name: 'whisper_subtitle_tool',
+      authors: 'Whisper Subtitle Tool',
+      description: 'Windows desktop GUI for generating Whisper SRT subtitles',
+    }),
+  ],
   plugins: [
     new VitePlugin({
       build: [

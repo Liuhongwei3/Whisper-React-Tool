@@ -19,7 +19,7 @@ npm run dev
 
 1. 选择或拖放 WAV / MP4 文件。
 2. 选择 `.bin` Whisper 模型。
-3. 设置线程数（默认 8）并保持中文识别。
+3. 选择中文或英文，设置线程数（默认 8）。
 4. 点击「开始生成字幕」。
 
 程序会执行等价命令：
@@ -35,3 +35,14 @@ SRT 文件将由 `whisper-cli` 输出到输入媒体文件所在目录，通常�
 ```bash
 npm run package
 ```
+
+## 发布 Windows 安装包
+
+推送 `v*` 标签（例如 `v1.0.0`）会触发 GitHub Actions，在 Windows 上生成 Squirrel 安装程序并自动附加到对应的 GitHub Release。
+
+```bash
+git tag v1.0.0
+git push origin v1.0.0
+```
+
+也可以从 GitHub Actions 手动运行 **Build Windows release**，下载构建产物进行测试。
