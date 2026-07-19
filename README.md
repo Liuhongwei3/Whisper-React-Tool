@@ -7,6 +7,7 @@ Windows 桌面 GUI：通过已安装的 `whisper-cli` 将 WAV 或 MP4 文件转�
 - Windows 10 或更高版本
 - 已安装 `whisper-cli`，并可在命令提示符或 PowerShell 中直接运行
 - 已下载 Whisper 模型文件，例如 `ggml-large-v3-turbo.bin`
+- 若处理 MP4：已安装 `ffmpeg`，并可执行 `ffmpeg -version`
 
 本工具不会捆绑模型或 Whisper CLI；请在界面中选择模型文件。
 
@@ -21,6 +22,8 @@ npm run dev
 2. 选择 `.bin` Whisper 模型。
 3. 选择中文或英文，设置线程数（默认 8）。
 4. 点击「开始生成字幕」。
+
+WAV 会直接送入 Whisper。MP4 会先由 FFmpeg 转换为临时的 16 kHz 单声道 PCM WAV，完成或失败后自动删除临时文件。
 
 程序会执行等价命令：
 
