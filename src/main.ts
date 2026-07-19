@@ -1,6 +1,6 @@
 import { app, BrowserWindow, dialog, ipcMain, shell } from 'electron'
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process'
-import { existsSync } from 'node:fs'
+import { existsSync, statSync } from 'node:fs'
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { cpus } from 'node:os'
 import path from 'node:path'
@@ -66,8 +66,8 @@ function reportProgress(output: string) {
 
 function createWindow() {
   mainWindow = new BrowserWindow({
-    width: 980,
-    height: 760,
+    width: 1200,
+    height: 920,
     minWidth: 760,
     minHeight: 620,
     webPreferences: {
@@ -186,12 +186,31 @@ app.whenReady().then(() => {
       activeProcess = null
       if (signal) {
         sendStatus({ state: 'cancelled', message: '字幕生成已取消' })
-      } else if (code === 0) {
+        return
+      }
+
+      let outputReady = false
+      try {
+        outputReady = existsSync(outputPath) && statSync(outputPath).size > 0
+      } catch {
+        outputReady = false
+      }
+
+      // whisper-cli 在读音频失败时仍可能以 0 退出，必须以实际输出文件为准
+      if (code === 0 && outputReady) {
         sendStatus({
           state: 'success',
           message: '字幕生成完成',
           outputPath,
           progress: 100,
+        })
+      } else if (!outputReady) {
+        sendStatus({
+          state: 'error',
+          message:
+            code === 0
+              ? `字幕生成失败：未生成有效的 SRT 文件。请查看日志（常见于 MP4 无法解码，whisper-cli 需支持该格式/ffmpeg）。`
+              : `whisper-cli 执行失败（退出码：${code ?? '未知'}），且未生成有效的 SRT 文件。`,
         })
       } else {
         sendStatus({
