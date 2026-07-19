@@ -67,13 +67,23 @@ export default function App() {
   const isRunning = status.state === 'running'
 
   useEffect(() => {
-    void window.whisper.getCpuCount().then((count) => {
-      setMaxThreads(count)
-      setThreads((current) => Math.min(Math.max(1, current), count))
-    })
-    void window.whisper.getLastModelFile().then((file) => {
-      if (file) setModelFile(file)
-    })
+    void window.whisper
+      .getCpuCount()
+      .then((count) => {
+        setMaxThreads(count)
+        setThreads((current) => Math.min(Math.max(1, current), count))
+      })
+      .catch((error) => {
+        setUiError(error instanceof Error ? `无法读取 CPU 线程数：${error.message}` : '无法读取 CPU 线程数。')
+      })
+    void window.whisper
+      .getLastModelFile()
+      .then((file) => {
+        if (file) setModelFile(file)
+      })
+      .catch((error) => {
+        setUiError(error instanceof Error ? `无法恢复上次的模型：${error.message}` : '无法恢复上次的模型。')
+      })
 
     const removeLogListener = window.whisper.onLog((line) => {
       setLogs((current) => [...current, line].slice(-300))
@@ -156,20 +166,28 @@ export default function App() {
   )
 
   const selectInput = async () => {
-    const file = await window.whisper.selectInputFile()
-    if (file) {
-      setInputFile(file)
-      setUiError(null)
-      setStatus({ state: 'idle', message: '媒体文件已选择。' })
+    try {
+      const file = await window.whisper.selectInputFile()
+      if (file) {
+        setInputFile(file)
+        setUiError(null)
+        setStatus({ state: 'idle', message: '媒体文件已选择。' })
+      }
+    } catch (error) {
+      setUiError(error instanceof Error ? `无法选择媒体文件：${error.message}` : '无法选择媒体文件。')
     }
   }
 
   const selectModel = async () => {
-    const file = await window.whisper.selectModelFile()
-    if (file) {
-      setModelFile(file)
-      setUiError(null)
-      setStatus({ state: 'idle', message: 'Whisper 模型已选择。' })
+    try {
+      const file = await window.whisper.selectModelFile()
+      if (file) {
+        setModelFile(file)
+        setUiError(null)
+        setStatus({ state: 'idle', message: 'Whisper 模型已选择。' })
+      }
+    } catch (error) {
+      setUiError(error instanceof Error ? `无法选择 Whisper 模型：${error.message}` : '无法选择 Whisper 模型。')
     }
   }
 
@@ -185,9 +203,11 @@ export default function App() {
         threads,
       })
     } catch (error) {
+      const message = error instanceof Error ? error.message : '无法启动字幕生成任务。'
+      setUiError(`无法启动字幕生成任务：${message}`)
       setStatus({
         state: 'error',
-        message: error instanceof Error ? error.message : '无法启动字幕生成任务。',
+        message,
       })
     }
   }
@@ -299,9 +319,17 @@ export default function App() {
           </div>
           <p className="mt-3 text-sm text-slate-700 dark:text-slate-300">{status.message}</p>
           {uiError && (
-            <p className="mt-3 rounded-lg border border-rose-200 bg-rose-50 p-3 text-sm text-rose-800 dark:border-rose-900 dark:bg-rose-950 dark:text-rose-200" role="alert">
-              {uiError}
-            </p>
+            <div className="mt-3 flex items-start justify-between gap-3 rounded-lg border border-rose-200 bg-rose-50 p-3 text-sm text-rose-800 dark:border-rose-900 dark:bg-rose-950 dark:text-rose-200" role="alert">
+              <p>{uiError}</p>
+              <button
+                aria-label="关闭错误提示"
+                className="shrink-0 font-semibold underline underline-offset-2"
+                onClick={() => setUiError(null)}
+                type="button"
+              >
+                关闭
+              </button>
+            </div>
           )}
           {isRunning && (
             <div className="mt-4">
