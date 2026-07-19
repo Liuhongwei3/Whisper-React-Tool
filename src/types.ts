@@ -29,6 +29,7 @@ export type WhisperApi = {
   getCpuCount: () => Promise<number>
   startTranscription: (options: WhisperRunOptions) => Promise<void>
   cancelTranscription: () => Promise<void>
+  notifyReady: () => void
   onLog: (listener: (line: string) => void) => () => void
   onStatus: (listener: (status: WhisperStatus) => void) => () => void
 }

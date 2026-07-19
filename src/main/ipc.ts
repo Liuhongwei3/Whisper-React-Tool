@@ -6,6 +6,7 @@ import type { WhisperRunOptions } from '../types'
 import { getLastModelPath, saveLastModelPath } from './preferences'
 import { getMainWindow, isTaskRunning, setCancellationRequested, setTaskRunning } from './runtime'
 import { cancelTranscription, runTranscription } from './transcription'
+import { revealMainWindow } from './window'
 
 function fileDetails(filePath: string) {
   return {
@@ -66,5 +67,9 @@ export function registerIpcHandlers() {
 
   ipcMain.handle('whisper:cancel', () => {
     cancelTranscription()
+  })
+
+  ipcMain.on('whisper:renderer-ready', () => {
+    revealMainWindow()
   })
 }

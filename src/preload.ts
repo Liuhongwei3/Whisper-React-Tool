@@ -11,6 +11,7 @@ const api: WhisperApi = {
   startTranscription: (options: WhisperRunOptions) =>
     ipcRenderer.invoke('whisper:start', options),
   cancelTranscription: () => ipcRenderer.invoke('whisper:cancel'),
+  notifyReady: () => ipcRenderer.send('whisper:renderer-ready'),
   onLog: (listener) => {
     const callback = (_event: Electron.IpcRendererEvent, line: string) => listener(line)
     ipcRenderer.on('whisper:log', callback)
