@@ -1,0 +1,35 @@
+export type SelectedFile = {
+  name: string
+  path: string
+  extension: string
+}
+
+export type WhisperRunOptions = {
+  inputPath: string
+  modelPath: string
+  language: 'zh'
+  threads: number
+}
+
+export type WhisperStatus = {
+  state: 'idle' | 'running' | 'success' | 'error' | 'cancelled'
+  message: string
+  outputPath?: string
+}
+
+export type WhisperApi = {
+  selectInputFile: () => Promise<SelectedFile | null>
+  selectModelFile: () => Promise<SelectedFile | null>
+  getPathForFile: (file: File) => string
+  getCpuCount: () => Promise<number>
+  startTranscription: (options: WhisperRunOptions) => Promise<void>
+  cancelTranscription: () => Promise<void>
+  onLog: (listener: (line: string) => void) => () => void
+  onStatus: (listener: (status: WhisperStatus) => void) => () => void
+}
+
+declare global {
+  interface Window {
+    whisper: WhisperApi
+  }
+}
