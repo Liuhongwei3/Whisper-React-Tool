@@ -10,15 +10,17 @@ function FileCard({
   label,
   file,
   onSelect,
+  onReveal,
   accept,
 }: {
   label: string
   file: SelectedFile | null
   onSelect: () => void
+  onReveal: (filePath: string) => void
   accept: string
 }) {
   return (
-    <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-700 dark:bg-slate-800">
+    <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-700 dark:bg-slate-900 dark:shadow-black/30">
       <div className="mb-3 flex items-center justify-between gap-4">
         <h2 className="font-semibold text-slate-900 dark:text-slate-100">{label}</h2>
         <button className="secondary-button" onClick={onSelect} type="button">
@@ -26,9 +28,16 @@ function FileCard({
         </button>
       </div>
       {file ? (
-        <div className="rounded-lg bg-slate-50 px-4 py-3 text-sm dark:bg-slate-900">
+        <div className="rounded-lg bg-slate-50 px-4 py-3 text-sm dark:bg-slate-950">
           <p className="font-medium text-slate-800 dark:text-slate-100">{file.name}</p>
-          <p className="mt-1 break-all text-slate-500 dark:text-slate-400">{file.path}</p>
+          <button
+            className="mt-1 block break-all text-left text-slate-500 underline decoration-slate-300 underline-offset-2 hover:text-indigo-600 dark:text-slate-300 dark:decoration-slate-600 dark:hover:text-indigo-300"
+            onClick={() => onReveal(file.path)}
+            title="在文件夹中显示"
+            type="button"
+          >
+            {file.path}
+          </button>
           <p className="mt-1 text-xs font-medium uppercase tracking-wide text-indigo-600">
             {file.extension.slice(1)} 文件
           </p>
@@ -44,10 +53,14 @@ export default function App() {
   const [inputFile, setInputFile] = useState<SelectedFile | null>(null)
   const [modelFile, setModelFile] = useState<SelectedFile | null>(null)
   const [threads, setThreads] = useState(8)
+  const [language, setLanguage] = useState<'zh' | 'en'>('zh')
   const [maxThreads, setMaxThreads] = useState(8)
   const [status, setStatus] = useState<WhisperStatus>(initialStatus)
   const [logs, setLogs] = useState<string[]>([])
   const [isDark, setIsDark] = useState(() => localStorage.getItem('theme') === 'dark')
+  const [openFolderWhenDone, setOpenFolderWhenDone] = useState(
+    () => localStorage.getItem('open-folder-when-done') === 'true',
+  )
   const dropRef = useRef<HTMLDivElement>(null)
   const logRef = useRef<HTMLPreElement>(null)
   const isRunning = status.state === 'running'
@@ -64,12 +77,17 @@ export default function App() {
     const removeLogListener = window.whisper.onLog((line) => {
       setLogs((current) => [...current, line].slice(-300))
     })
-    const removeStatusListener = window.whisper.onStatus(setStatus)
+    const removeStatusListener = window.whisper.onStatus((nextStatus) => {
+      setStatus(nextStatus)
+      if (nextStatus.state === 'success' && nextStatus.outputPath && openFolderWhenDone) {
+        void window.whisper.revealInFolder(nextStatus.outputPath).catch(() => undefined)
+      }
+    })
     return () => {
       removeLogListener()
       removeStatusListener()
     }
-  }, [])
+  }, [openFolderWhenDone])
 
   useEffect(() => {
     if (logRef.current) {
@@ -81,6 +99,14 @@ export default function App() {
     setIsDark((current) => {
       const next = !current
       localStorage.setItem('theme', next ? 'dark' : 'light')
+      return next
+    })
+  }
+
+  const toggleOpenFolderWhenDone = () => {
+    setOpenFolderWhenDone((current) => {
+      const next = !current
+      localStorage.setItem('open-folder-when-done', String(next))
       return next
     })
   }
@@ -142,7 +168,7 @@ export default function App() {
       await window.whisper.startTranscription({
         inputPath: inputFile.path,
         modelPath: modelFile.path,
-        language: 'zh',
+        language,
         threads,
       })
     } catch (error) {
@@ -155,9 +181,9 @@ export default function App() {
 
   const statusColor = {
     idle: 'bg-slate-100 text-slate-700 dark:bg-slate-700 dark:text-slate-200',
-    running: 'bg-amber-100 text-amber-800',
-    success: 'bg-emerald-100 text-emerald-800',
-    error: 'bg-rose-100 text-rose-800',
+    running: 'bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-200',
+    success: 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-200',
+    error: 'bg-rose-100 text-rose-800 dark:bg-rose-950 dark:text-rose-200',
     cancelled: 'bg-slate-200 text-slate-700 dark:bg-slate-700 dark:text-slate-200',
   }[status.state]
 
@@ -183,17 +209,35 @@ export default function App() {
         </div>
 
         <div className="grid gap-5 md:grid-cols-2">
-          <FileCard label="输入媒体文件" file={inputFile} onSelect={() => void selectInput()} accept="WAV、MP4" />
-          <FileCard label="Whisper 模型" file={modelFile} onSelect={() => void selectModel()} accept=".bin" />
+          <FileCard
+            accept="WAV、MP4"
+            file={inputFile}
+            label="输入媒体文件"
+            onReveal={(filePath) => void window.whisper.revealInFolder(filePath)}
+            onSelect={() => void selectInput()}
+          />
+          <FileCard
+            accept=".bin"
+            file={modelFile}
+            label="Whisper 模型"
+            onReveal={(filePath) => void window.whisper.revealInFolder(filePath)}
+            onSelect={() => void selectModel()}
+          />
         </div>
 
-        <section className="mt-5 rounded-xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-700 dark:bg-slate-800">
+        <section className="mt-5 rounded-xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-700 dark:bg-slate-900 dark:shadow-black/30">
           <h2 className="mb-4 font-semibold">生成设置</h2>
           <div className="grid gap-5 sm:grid-cols-3">
             <label className="text-sm font-medium text-slate-700 dark:text-slate-300">
               语言
-              <select className="field mt-2" disabled value="zh">
+              <select
+                className="field mt-2"
+                disabled={isRunning}
+                onChange={(event) => setLanguage(event.target.value as 'zh' | 'en')}
+                value={language}
+              >
                 <option value="zh">中文（Chinese）</option>
+                <option value="en">英文（English）</option>
               </select>
             </label>
             <label className="text-sm font-medium text-slate-700 dark:text-slate-300">
@@ -216,19 +260,23 @@ export default function App() {
               </label>
             </div>
           </div>
-          <div className="mt-6 flex flex-wrap gap-3">
-            <button className="primary-button" disabled={!canStart} onClick={() => void start()} type="button">
-              {isRunning ? '正在生成字幕…' : '开始生成字幕'}
-            </button>
+          <label className="mt-5 flex w-fit cursor-pointer items-center gap-2 text-sm text-slate-700 dark:text-slate-300">
+            <input checked={openFolderWhenDone} onChange={toggleOpenFolderWhenDone} type="checkbox" />
+            生成完成后自动打开文件所在文件夹
+          </label>
+          <div className="mt-6 flex flex-wrap justify-end gap-3">
             {isRunning && (
               <button className="secondary-button" onClick={() => void window.whisper.cancelTranscription()} type="button">
                 取消任务
               </button>
             )}
+            <button className="primary-button" disabled={!canStart} onClick={() => void start()} type="button">
+              {isRunning ? '正在生成字幕…' : '开始生成字幕'}
+            </button>
           </div>
         </section>
 
-        <section className="mt-5 rounded-xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-700 dark:bg-slate-800">
+        <section className="mt-5 rounded-xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-700 dark:bg-slate-900 dark:shadow-black/30">
           <div className="flex items-center justify-between gap-3">
             <h2 className="font-semibold">处理状态</h2>
             <span className={`rounded-full px-3 py-1 text-xs font-semibold ${statusColor}`}>
@@ -251,9 +299,13 @@ export default function App() {
             </div>
           )}
           {status.outputPath && (
-            <p className="mt-2 break-all rounded-lg bg-emerald-50 p-3 text-sm text-emerald-800">
-              已生成：{status.outputPath}
-            </p>
+            <button
+              className="mt-2 block w-full break-all rounded-lg bg-emerald-50 p-3 text-left text-sm text-emerald-800 underline decoration-emerald-300 underline-offset-2 hover:bg-emerald-100 dark:bg-emerald-950 dark:text-emerald-200 dark:decoration-emerald-700 dark:hover:bg-emerald-900"
+              onClick={() => void window.whisper.revealInFolder(status.outputPath!)}
+              type="button"
+            >
+              已生成：{status.outputPath}（点击在文件夹中显示）
+            </button>
           )}
           <pre className="mt-4 max-h-64 overflow-auto rounded-lg bg-slate-950 p-4 text-xs leading-5 text-slate-200" ref={logRef}>
             {logs.length ? logs.join('') : 'whisper-cli 输出将实时显示在这里。'}
