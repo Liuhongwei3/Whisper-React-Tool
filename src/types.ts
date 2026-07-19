@@ -15,11 +15,13 @@ export type WhisperStatus = {
   state: 'idle' | 'running' | 'success' | 'error' | 'cancelled'
   message: string
   outputPath?: string
+  progress?: number
 }
 
 export type WhisperApi = {
   selectInputFile: () => Promise<SelectedFile | null>
   selectModelFile: () => Promise<SelectedFile | null>
+  getLastModelFile: () => Promise<SelectedFile | null>
   getPathForFile: (file: File) => string
   getCpuCount: () => Promise<number>
   startTranscription: (options: WhisperRunOptions) => Promise<void>

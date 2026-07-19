@@ -1,5 +1,7 @@
 import { app, BrowserWindow, dialog, ipcMain } from 'electron'
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process'
+import { existsSync } from 'node:fs'
+import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { cpus } from 'node:os'
 import path from 'node:path'
 import type { WhisperRunOptions, WhisperStatus } from './types'
@@ -21,6 +23,40 @@ function fileDetails(filePath: string) {
     path: filePath,
     extension: path.extname(filePath).toLowerCase(),
   }
+}
+
+function modelPreferencesPath() {
+  return path.join(app.getPath('userData'), 'preferences.json')
+}
+
+async function saveLastModelPath(modelPath: string) {
+  const preferencesPath = modelPreferencesPath()
+  await mkdir(path.dirname(preferencesPath), { recursive: true })
+  await writeFile(preferencesPath, JSON.stringify({ lastModelPath: modelPath }), 'utf8')
+}
+
+async function getLastModelPath() {
+  try {
+    const preferences = JSON.parse(await readFile(modelPreferencesPath(), 'utf8')) as {
+      lastModelPath?: unknown
+    }
+    return typeof preferences.lastModelPath === 'string' && existsSync(preferences.lastModelPath)
+      ? preferences.lastModelPath
+      : null
+  } catch {
+    return null
+  }
+}
+
+function reportProgress(output: string) {
+  const match = output.match(/progress\s*(?:=|:)\s*(\d{1,3})\s*%/i)
+  if (!match) return
+  const progress = Math.min(100, Number(match[1]))
+  sendStatus({
+    state: 'running',
+    message: `正在识别语音：${progress}%`,
+    progress,
+  })
 }
 
 function createWindow() {
@@ -61,7 +97,14 @@ app.whenReady().then(() => {
       properties: ['openFile'],
       filters: [{ name: 'Whisper 模型', extensions: ['bin'] }],
     })
-    return result.canceled ? null : fileDetails(result.filePaths[0])
+    if (result.canceled) return null
+    await saveLastModelPath(result.filePaths[0])
+    return fileDetails(result.filePaths[0])
+  })
+
+  ipcMain.handle('whisper:get-last-model', async () => {
+    const modelPath = await getLastModelPath()
+    return modelPath ? fileDetails(modelPath) : null
   })
 
   ipcMain.handle('whisper:cpu-count', () => Math.max(1, cpus().length))
@@ -83,6 +126,7 @@ app.whenReady().then(() => {
       '-l',
       options.language,
       '--output-srt',
+      '--print-progress',
       '-t',
       String(options.threads),
     ]
@@ -102,8 +146,16 @@ app.whenReady().then(() => {
       return
     }
 
-    activeProcess.stdout.on('data', (data: Buffer) => sendLog(data.toString()))
-    activeProcess.stderr.on('data', (data: Buffer) => sendLog(data.toString()))
+    activeProcess.stdout.on('data', (data: Buffer) => {
+      const output = data.toString()
+      sendLog(output)
+      reportProgress(output)
+    })
+    activeProcess.stderr.on('data', (data: Buffer) => {
+      const output = data.toString()
+      sendLog(output)
+      reportProgress(output)
+    })
     activeProcess.on('error', (error) => {
       activeProcess = null
       sendStatus({
@@ -120,6 +172,7 @@ app.whenReady().then(() => {
           state: 'success',
           message: '字幕生成完成',
           outputPath,
+          progress: 100,
         })
       } else {
         sendStatus({

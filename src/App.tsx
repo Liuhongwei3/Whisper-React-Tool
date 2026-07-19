@@ -18,23 +18,23 @@ function FileCard({
   accept: string
 }) {
   return (
-    <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+    <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-700 dark:bg-slate-800">
       <div className="mb-3 flex items-center justify-between gap-4">
-        <h2 className="font-semibold text-slate-900">{label}</h2>
+        <h2 className="font-semibold text-slate-900 dark:text-slate-100">{label}</h2>
         <button className="secondary-button" onClick={onSelect} type="button">
           选择文件
         </button>
       </div>
       {file ? (
-        <div className="rounded-lg bg-slate-50 px-4 py-3 text-sm">
-          <p className="font-medium text-slate-800">{file.name}</p>
-          <p className="mt-1 break-all text-slate-500">{file.path}</p>
+        <div className="rounded-lg bg-slate-50 px-4 py-3 text-sm dark:bg-slate-900">
+          <p className="font-medium text-slate-800 dark:text-slate-100">{file.name}</p>
+          <p className="mt-1 break-all text-slate-500 dark:text-slate-400">{file.path}</p>
           <p className="mt-1 text-xs font-medium uppercase tracking-wide text-indigo-600">
             {file.extension.slice(1)} 文件
           </p>
         </div>
       ) : (
-        <p className="text-sm text-slate-500">支持 {accept}</p>
+        <p className="text-sm text-slate-500 dark:text-slate-400">支持 {accept}</p>
       )}
     </section>
   )
@@ -47,13 +47,18 @@ export default function App() {
   const [maxThreads, setMaxThreads] = useState(8)
   const [status, setStatus] = useState<WhisperStatus>(initialStatus)
   const [logs, setLogs] = useState<string[]>([])
+  const [isDark, setIsDark] = useState(() => localStorage.getItem('theme') === 'dark')
   const dropRef = useRef<HTMLDivElement>(null)
+  const logRef = useRef<HTMLPreElement>(null)
   const isRunning = status.state === 'running'
 
   useEffect(() => {
     void window.whisper.getCpuCount().then((count) => {
       setMaxThreads(count)
       setThreads((current) => Math.min(Math.max(1, current), count))
+    })
+    void window.whisper.getLastModelFile().then((file) => {
+      if (file) setModelFile(file)
     })
 
     const removeLogListener = window.whisper.onLog((line) => {
@@ -65,6 +70,20 @@ export default function App() {
       removeStatusListener()
     }
   }, [])
+
+  useEffect(() => {
+    if (logRef.current) {
+      logRef.current.scrollTop = logRef.current.scrollHeight
+    }
+  }, [logs])
+
+  const toggleTheme = () => {
+    setIsDark((current) => {
+      const next = !current
+      localStorage.setItem('theme', next ? 'dark' : 'light')
+      return next
+    })
+  }
 
   useEffect(() => {
     const element = dropRef.current
@@ -135,24 +154,29 @@ export default function App() {
   }
 
   const statusColor = {
-    idle: 'bg-slate-100 text-slate-700',
+    idle: 'bg-slate-100 text-slate-700 dark:bg-slate-700 dark:text-slate-200',
     running: 'bg-amber-100 text-amber-800',
     success: 'bg-emerald-100 text-emerald-800',
     error: 'bg-rose-100 text-rose-800',
-    cancelled: 'bg-slate-200 text-slate-700',
+    cancelled: 'bg-slate-200 text-slate-700 dark:bg-slate-700 dark:text-slate-200',
   }[status.state]
 
   return (
-    <main className="min-h-screen bg-slate-100 text-slate-900">
+    <main className={`min-h-screen bg-slate-100 text-slate-900 transition-colors dark:bg-slate-950 dark:text-slate-100 ${isDark ? 'dark' : ''}`}>
       <div className="mx-auto max-w-5xl p-6 md:p-10">
-        <header className="mb-8">
-          <p className="mb-2 text-sm font-semibold tracking-wide text-indigo-600">WHISPER CLI GUI</p>
-          <h1 className="text-3xl font-bold tracking-tight">Whisper 字幕生成器</h1>
-          <p className="mt-2 text-slate-600">选择媒体文件和模型，生成中文 SRT 字幕。</p>
+        <header className="mb-8 flex items-start justify-between gap-4">
+          <div>
+            <p className="mb-2 text-sm font-semibold tracking-wide text-indigo-600">WHISPER CLI GUI</p>
+            <h1 className="text-3xl font-bold tracking-tight">Whisper 字幕生成器</h1>
+            <p className="mt-2 text-slate-600 dark:text-slate-400">选择媒体文件和模型，生成中文 SRT 字幕。</p>
+          </div>
+          <button className="secondary-button" onClick={toggleTheme} type="button">
+            {isDark ? '切换浅色' : '切换深色'}
+          </button>
         </header>
 
         <div
-          className="mb-5 rounded-xl border-2 border-dashed border-indigo-200 bg-indigo-50 p-5 text-center text-sm text-indigo-800"
+          className="mb-5 rounded-xl border-2 border-dashed border-indigo-200 bg-indigo-50 p-5 text-center text-sm text-indigo-800 dark:border-indigo-700 dark:bg-indigo-950 dark:text-indigo-200"
           ref={dropRef}
         >
           将 WAV 或 MP4 文件拖放到这里，或使用下方按钮选择文件
@@ -163,16 +187,16 @@ export default function App() {
           <FileCard label="Whisper 模型" file={modelFile} onSelect={() => void selectModel()} accept=".bin" />
         </div>
 
-        <section className="mt-5 rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+        <section className="mt-5 rounded-xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-700 dark:bg-slate-800">
           <h2 className="mb-4 font-semibold">生成设置</h2>
           <div className="grid gap-5 sm:grid-cols-3">
-            <label className="text-sm font-medium text-slate-700">
+            <label className="text-sm font-medium text-slate-700 dark:text-slate-300">
               语言
               <select className="field mt-2" disabled value="zh">
                 <option value="zh">中文（Chinese）</option>
               </select>
             </label>
-            <label className="text-sm font-medium text-slate-700">
+            <label className="text-sm font-medium text-slate-700 dark:text-slate-300">
               线程数 <span className="font-normal text-slate-400">（最多 {maxThreads}）</span>
               <input
                 className="field mt-2"
@@ -184,9 +208,9 @@ export default function App() {
                 value={threads}
               />
             </label>
-            <div className="text-sm font-medium text-slate-700">
+            <div className="text-sm font-medium text-slate-700 dark:text-slate-300">
               输出格式
-              <label className="mt-2 flex h-10 items-center gap-2 rounded-lg border border-slate-300 px-3 font-normal text-slate-800">
+              <label className="mt-2 flex h-10 items-center gap-2 rounded-lg border border-slate-300 px-3 font-normal text-slate-800 dark:border-slate-600 dark:text-slate-200">
                 <input checked readOnly type="checkbox" />
                 SRT
               </label>
@@ -204,20 +228,34 @@ export default function App() {
           </div>
         </section>
 
-        <section className="mt-5 rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+        <section className="mt-5 rounded-xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-700 dark:bg-slate-800">
           <div className="flex items-center justify-between gap-3">
             <h2 className="font-semibold">处理状态</h2>
             <span className={`rounded-full px-3 py-1 text-xs font-semibold ${statusColor}`}>
               {status.state === 'running' ? '处理中' : status.state === 'success' ? '已完成' : status.state === 'error' ? '出错' : '等待中'}
             </span>
           </div>
-          <p className="mt-3 text-sm text-slate-700">{status.message}</p>
+          <p className="mt-3 text-sm text-slate-700 dark:text-slate-300">{status.message}</p>
+          {isRunning && (
+            <div className="mt-4">
+              <div className="mb-1 flex justify-between text-xs text-slate-500 dark:text-slate-400">
+                <span>{status.progress === undefined ? '正在准备或处理音频…' : '识别进度'}</span>
+                <span>{status.progress === undefined ? '处理中' : `${status.progress}%`}</span>
+              </div>
+              <div className="h-2 overflow-hidden rounded-full bg-slate-200 dark:bg-slate-700">
+                <div
+                  className={`h-full rounded-full bg-indigo-600 transition-all duration-300 ${status.progress === undefined ? 'w-1/3 animate-pulse' : ''}`}
+                  style={status.progress === undefined ? undefined : { width: `${status.progress}%` }}
+                />
+              </div>
+            </div>
+          )}
           {status.outputPath && (
             <p className="mt-2 break-all rounded-lg bg-emerald-50 p-3 text-sm text-emerald-800">
               已生成：{status.outputPath}
             </p>
           )}
-          <pre className="mt-4 max-h-64 overflow-auto rounded-lg bg-slate-950 p-4 text-xs leading-5 text-slate-200">
+          <pre className="mt-4 max-h-64 overflow-auto rounded-lg bg-slate-950 p-4 text-xs leading-5 text-slate-200" ref={logRef}>
             {logs.length ? logs.join('') : 'whisper-cli 输出将实时显示在这里。'}
           </pre>
         </section>
