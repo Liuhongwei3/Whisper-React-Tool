@@ -26,6 +26,7 @@
   },
   "bundle": {
     "active": true,
+    "icon": [],
     "targets": "nsis",
     "windows": {
       "nsis": {
