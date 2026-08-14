@@ -1,10 +1,12 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { getCurrentWindow } from '@tauri-apps/api/window'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { DropZone } from './components/DropZone'
 import { FileCard } from './components/FileCard'
 import { HelpDialog } from './components/HelpDialog'
 import { SettingsPanel } from './components/SettingsPanel'
 import { StatusPanel } from './components/StatusPanel'
 import { TimeRangeSlider } from './components/TimeRangeSlider'
+import { whisper } from './lib/tauri'
 import type { SelectedFile, WhisperStatus } from './types'
 
 const initialStatus: WhisperStatus = {
@@ -31,6 +33,7 @@ export default function App() {
   const [rangeStart, setRangeStart] = useState(0)
   const [rangeEnd, setRangeEnd] = useState(0)
   const [durationError, setDurationError] = useState<string | null>(null)
+  const allowWindowClose = useRef(false)
   const isRunning = status.state === 'running'
 
   const resetTimeRange = useCallback((duration: number) => {
@@ -46,7 +49,7 @@ export default function App() {
       setMediaDuration(null)
       setDurationError(null)
       try {
-        const duration = await window.whisper.getMediaDuration(filePath)
+        const duration = await whisper.getMediaDuration(filePath)
         resetTimeRange(duration)
       } catch (error) {
         setMediaDuration(null)
@@ -63,14 +66,14 @@ export default function App() {
   const openParentFolder = useCallback(async (filePath: string) => {
     try {
       setUiError(null)
-      await window.whisper.openParentFolder(filePath)
+      await whisper.openParentFolder(filePath)
     } catch (error) {
       setUiError(error instanceof Error ? `无法打开文件夹：${error.message}` : '无法打开文件夹。')
     }
   }, [])
 
   useEffect(() => {
-    void window.whisper
+    void whisper
       .getCpuCount()
       .then((count) => {
         setMaxThreads(count)
@@ -79,7 +82,7 @@ export default function App() {
       .catch((error) => {
         setUiError(error instanceof Error ? `无法读取 CPU 线程数：${error.message}` : '无法读取 CPU 线程数。')
       })
-    void window.whisper
+    void whisper
       .getLastModelFile()
       .then((file) => {
         if (file) setModelFile(file)
@@ -88,10 +91,10 @@ export default function App() {
         setUiError(error instanceof Error ? `无法恢复上次的模型：${error.message}` : '无法恢复上次的模型。')
       })
 
-    const removeLogListener = window.whisper.onLog((line) => {
+    const removeLogListener = whisper.onLog((line) => {
       setLogs((current) => [...current, line].slice(-300))
     })
-    const removeStatusListener = window.whisper.onStatus((nextStatus) => {
+    const removeStatusListener = whisper.onStatus((nextStatus) => {
       setStatus(nextStatus)
       if (nextStatus.state === 'success' && nextStatus.outputPath && openFolderWhenDone) {
         void openParentFolder(nextStatus.outputPath)
@@ -102,6 +105,23 @@ export default function App() {
       removeStatusListener()
     }
   }, [openFolderWhenDone, openParentFolder])
+
+  useEffect(() => {
+    let removeCloseListener: (() => void) | undefined
+    void getCurrentWindow()
+      .onCloseRequested(async (event) => {
+        if (allowWindowClose.current || !(await whisper.isTaskRunning())) return
+        event.preventDefault()
+        if (!(await whisper.confirmCancelOnClose())) return
+        allowWindowClose.current = true
+        await whisper.cancelTranscription()
+        await getCurrentWindow().close()
+      })
+      .then((removeListener) => {
+        removeCloseListener = removeListener
+      })
+    return () => removeCloseListener?.()
+  }, [])
 
   const toggleTheme = () => {
     setIsDark((current) => {
@@ -119,22 +139,27 @@ export default function App() {
     })
   }
 
-  const handleDropFile = useCallback((file: File) => {
-    const extension = file.name.slice(file.name.lastIndexOf('.')).toLowerCase()
-    if (extension !== '.wav' && extension !== '.mp4') {
-      setStatus({ state: 'error', message: '仅支持 WAV 或 MP4 文件。' })
-      return
-    }
-    const filePath = window.whisper.getPathForFile(file)
-    if (!filePath) {
-      setStatus({ state: 'error', message: '无法读取拖拽文件的本地路径。' })
-      return
-    }
-    setInputFile({ name: file.name, path: filePath, extension })
-    if (extension !== '.mp4') setKeepConvertedWav(false)
-    setStatus({ state: 'idle', message: '媒体文件已选择，请继续选择 Whisper 模型。' })
-    void loadMediaDuration(filePath)
-  }, [loadMediaDuration])
+  const handleDropPath = useCallback(
+    async (filePath: string) => {
+      try {
+        const file = await whisper.getFileDetails(filePath)
+        if (file.extension !== '.wav' && file.extension !== '.mp4') {
+          setStatus({ state: 'error', message: '仅支持 WAV 或 MP4 文件。' })
+          return
+        }
+        setInputFile(file)
+        if (file.extension !== '.mp4') setKeepConvertedWav(false)
+        setStatus({ state: 'idle', message: '媒体文件已选择，请继续选择 Whisper 模型。' })
+        void loadMediaDuration(file.path)
+      } catch (error) {
+        setStatus({
+          state: 'error',
+          message: error instanceof Error ? error.message : '无法读取拖拽文件的本地路径。',
+        })
+      }
+    },
+    [loadMediaDuration],
+  )
 
   const canStart = useMemo(
     () => Boolean(inputFile && modelFile && threads >= 1 && !isRunning),
@@ -143,7 +168,7 @@ export default function App() {
 
   const selectInput = async () => {
     try {
-      const file = await window.whisper.selectInputFile()
+      const file = await whisper.selectInputFile()
       if (file) {
         setInputFile(file)
         if (file.extension !== '.mp4') setKeepConvertedWav(false)
@@ -158,7 +183,7 @@ export default function App() {
 
   const selectModel = async () => {
     try {
-      const file = await window.whisper.selectModelFile()
+      const file = await whisper.selectModelFile()
       if (file) {
         setModelFile(file)
         setUiError(null)
@@ -176,7 +201,7 @@ export default function App() {
     const isPartial =
       mediaDuration !== null && (rangeStart > 0 || rangeEnd < mediaDuration)
     try {
-      await window.whisper.startTranscription({
+      await whisper.startTranscription({
         inputPath: inputFile.path,
         modelPath: modelFile.path,
         language,
@@ -224,7 +249,7 @@ export default function App() {
           </div>
         </header>
 
-        <DropZone onDropFile={handleDropFile} />
+        <DropZone onDropPath={handleDropPath} />
 
         <div className="grid gap-5 md:grid-cols-2">
           <FileCard
@@ -266,7 +291,7 @@ export default function App() {
           keepConvertedWav={keepConvertedWav}
           language={language}
           maxThreads={maxThreads}
-          onCancel={() => void window.whisper.cancelTranscription()}
+          onCancel={() => void whisper.cancelTranscription()}
           onKeepConvertedWavChange={setKeepConvertedWav}
           onLanguageChange={setLanguage}
           onStart={() => void start()}

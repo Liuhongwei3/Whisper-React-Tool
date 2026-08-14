@@ -21,24 +21,3 @@ export type WhisperStatus = {
   convertedWavPath?: string
   progress?: number
 }
-
-export type WhisperApi = {
-  selectInputFile: () => Promise<SelectedFile | null>
-  selectModelFile: () => Promise<SelectedFile | null>
-  getLastModelFile: () => Promise<SelectedFile | null>
-  getPathForFile: (file: File) => string
-  openParentFolder: (filePath: string) => Promise<void>
-  getCpuCount: () => Promise<number>
-  getMediaDuration: (filePath: string) => Promise<number>
-  startTranscription: (options: WhisperRunOptions) => Promise<void>
-  cancelTranscription: () => Promise<void>
-  notifyReady: () => void
-  onLog: (listener: (line: string) => void) => () => void
-  onStatus: (listener: (status: WhisperStatus) => void) => () => void
-}
-
-declare global {
-  interface Window {
-    whisper: WhisperApi
-  }
-}

@@ -2,4 +2,5 @@ node_modules/
 dist/
 out/
 .vite/
+src-tauri/target/
 .DS_Store
