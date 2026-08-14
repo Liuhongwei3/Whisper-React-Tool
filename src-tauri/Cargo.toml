@@ -1,6 +1,6 @@
 [package]
 name = "whisper_subtitle_tool"
-version = "0.1.0"
+version = "1.0.0"
 edition = "2021"
 
 [dependencies]
@@ -11,4 +11,4 @@ tauri-plugin-dialog = "2"
 tauri-plugin-opener = "2"
 
 [build-dependencies]
-tauri-build = "2"
+tauri-build = { version = "2", features = [] }
