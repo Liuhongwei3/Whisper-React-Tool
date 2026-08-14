@@ -22,11 +22,14 @@ jobs:
           node-version: 22
           cache: npm
 
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+
       - name: Install dependencies
         run: npm ci
 
       - name: Build Windows installer
-        run: npm run make -- --platform=win32 --arch=x64
+        run: npm run package
 
       - name: Publish GitHub Release
         if: startsWith(github.ref, 'refs/tags/')
@@ -34,8 +37,7 @@ jobs:
         with:
           generate_release_notes: true
           files: |
-            out/make/squirrel.windows/x64/*.exe
-            out/make/squirrel.windows/x64/*.nupkg
+            src-tauri/target/release/bundle/nsis/*.exe
 
       - name: Upload manual-build artifacts
         if: github.event_name == 'workflow_dispatch'
@@ -43,5 +45,4 @@ jobs:
         with:
           name: whisper-subtitle-tool-windows-x64
           path: |
-            out/make/squirrel.windows/x64/*.exe
-            out/make/squirrel.windows/x64/*.nupkg
+            src-tauri/target/release/bundle/nsis/*.exe

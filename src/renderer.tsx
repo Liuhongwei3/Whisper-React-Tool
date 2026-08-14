@@ -13,10 +13,3 @@ createRoot(rootElement).render(
     <App />
   </StrictMode>,
 )
-
-// 等首帧绘制后再切换，避免用户只看到空白底色
-requestAnimationFrame(() => {
-  requestAnimationFrame(() => {
-    window.whisper.notifyReady()
-  })
-})
