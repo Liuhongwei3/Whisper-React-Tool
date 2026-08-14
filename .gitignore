@@ -3,4 +3,6 @@ dist/
 out/
 .vite/
 src-tauri/target/
+src-tauri/icons/
+src-tauri/gen/
 .DS_Store
